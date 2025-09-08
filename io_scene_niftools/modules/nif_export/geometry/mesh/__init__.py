@@ -418,16 +418,28 @@ class Mesh:
             loop_hashes = np.concatenate((loop_hashes, loop_colors), axis=1)
 
         if normal:
-            # calculate normals
-            b_mesh.calc_normals_split()
-            loop_normals = np.zeros((n_loops, 3), dtype=float)
-            b_mesh.loops.foreach_get('normal', loop_normals.reshape((-1, 1)))
-            # smooth = vertex normal, non-smooth = face normal)
-            for poly in b_mesh.polygons:
-                if not poly.use_smooth:
-                    loop_normals[poly.loop_indices] = poly.normal
-            loop_normals = loop_normals[matl_to_loop]
-            loop_hashes = np.concatenate((loop_hashes, loop_normals), axis=1)
+            try:
+                # calculate normals
+                if hasattr(b_mesh, 'calc_normals_split'):
+                    b_mesh.calc_normals_split()
+                elif hasattr(b_mesh, 'calc_normals'):
+                    # Blender 4.0+ removed calc_normals_split; calc_normals() populates normals for vertices/loops
+                    b_mesh.calc_normals()
+                else:
+                    raise AttributeError("No normals calculation method available on mesh")
+
+                loop_normals = np.zeros((n_loops, 3), dtype=float)
+                b_mesh.loops.foreach_get('normal', loop_normals.reshape((-1, 1)))
+                # smooth = vertex normal, non-smooth = face normal)
+                for poly in b_mesh.polygons:
+                    if not poly.use_smooth:
+                        loop_normals[poly.loop_indices] = poly.normal
+                loop_normals = loop_normals[matl_to_loop]
+                loop_hashes = np.concatenate((loop_hashes, loop_normals), axis=1)
+            except Exception as ex:
+                # If evaluated meshes in Blender 4.x don't expose calc_* APIs, skip normals gracefully
+                NifLog.warn(f"Normals could not be computed for '{b_mesh.name}' ({ex}). Exporting without normals.")
+                normal = False
 
         if uv:
             uv_layers = []
@@ -668,8 +680,13 @@ class Mesh:
                     NifLog.warn(f"Using more than {rec_bones} bones per partition on {game} export."
                                 f"This may cause issues in-game.")
 
-            part_order = [NifClasses.BSDismemberBodyPartType[face_map.name] for face_map in
-                          b_obj.face_maps if face_map.name in NifClasses.BSDismemberBodyPartType.__members__]
+            if hasattr(b_obj, 'face_maps') and b_obj.face_maps is not None:
+                part_order = [NifClasses.BSDismemberBodyPartType[face_map.name]
+                              for face_map in b_obj.face_maps
+                              if face_map.name in NifClasses.BSDismemberBodyPartType.__members__]
+            else:
+                part_order = []
+                NifLog.warn("Face Maps are not available on this Blender version; exporting skin partition without body part sort order.")
             # override pyffi n_geom.update_skin_partition with custom one (that allows ordering)
             n_geom.update_skin_partition = update_skin_partition.__get__(n_geom)
             lostweight = n_geom.update_skin_partition(
@@ -737,6 +754,10 @@ class Mesh:
     def get_polygon_parts(self, b_obj, b_mesh):
         """Returns the body part indices of the mesh polygons. -1 is either not assigned to a face map or not a valid
         body part"""
+        # Blender 4.0+ removed Face Maps. In those versions, b_obj.face_maps does not exist.
+        # Fall back to no polygon parts, which is already handled by callers (zeros or skip by game).
+        if not hasattr(b_obj, 'face_maps') or b_obj.face_maps is None:
+            return np.array([])
         index_group_map = {-1: -1}
         for bodypartgroupname in [member.name for member in NifClasses.BSDismemberBodyPartType]:
             face_map = b_obj.face_maps.get(bodypartgroupname)

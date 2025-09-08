@@ -78,7 +78,10 @@ class Vertex:
             # the normals need to be pre-normalized or blender will do it inconsistely, leading to marked sharp edges
             no_array = Vertex.normalize(no_array)
             # use normals_split_custom_set_from_vertices to set the loop custom normals from the per-vertex normals
-            b_mesh.use_auto_smooth = True
+            # In Blender < 4.0 this flag must be enabled to use custom split normals.
+            # Blender 4.0+ removed this property; custom normals are used when provided.
+            if hasattr(b_mesh, "use_auto_smooth"):
+                b_mesh.use_auto_smooth = True
             b_mesh.normals_split_custom_set_from_vertices(no_array)
 
     @staticmethod

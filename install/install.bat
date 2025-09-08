@@ -35,4 +35,14 @@ if exist "%BLENDER_ADDONS_DIR%\io_scene_niftools" rmdir /s /q "%BLENDER_ADDONS_D
 :: copy files from repository to blender addons folder
 powershell -executionpolicy bypass -Command "%DIR%\unzip.ps1" -source '%DIR%\%ZIP_NAME%.zip' -destination '%BLENDER_ADDONS_DIR%'
 
+:: ensure bundled dependencies are present (e.g., texconv.exe)
+set "ADDON_DST=%BLENDER_ADDONS_DIR%\io_scene_niftools"
+if not exist "%ADDON_DST%\dependencies\bin" mkdir "%ADDON_DST%\dependencies\bin"
+if exist "%ROOT%\bin\texconv.exe" (
+  echo Copying texconv.exe to "%ADDON_DST%\dependencies\bin\texconv.exe"
+  copy /y "%ROOT%\bin\texconv.exe" "%ADDON_DST%\dependencies\bin\texconv.exe" >nul 2>&1
+) else (
+  echo WARNING: "%ROOT%\bin\texconv.exe" not found. Auto-convert to DXT1 will fall back to PATH.
+)
+
 :end

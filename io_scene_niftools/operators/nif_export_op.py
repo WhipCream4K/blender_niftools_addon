@@ -122,6 +122,25 @@ class NifExportOperator(Operator, ExportHelper, CommonDevOperator, CommonNif, Co
         description="Force texture .dds extension",
         default=True)
 
+    # Embed textures instead of referencing external files
+    embed_textures: bpy.props.BoolProperty(
+        name="Embed Textures (NiPixelData)",
+        description="Store texture data inside the NIF (NiSourceTexture.use_external = False). Note: engine support varies.",
+        default=False)
+
+    # When embedding, choose to embed only base mip level (true) or all mipmaps (false)
+    embed_only_base_mipmap: bpy.props.BoolProperty(
+        name="Embed Base Mip Only",
+        description="If enabled, only embed the top-level (largest) mip. Disable to embed all mipmaps from the source DDS.",
+        default=True)
+
+    # Auto-convert to DXT1 if the source texture is not BC1/2/3
+    auto_convert_to_dxt1: bpy.props.BoolProperty(
+        name="Auto-convert to DXT1 on embed",
+        description="If enabled and the source is not DXT1/3/5, attempt to run texconv to convert to DXT1 before embedding.",
+        default=False)
+
+
     # Whether or not to remove duplicate materials
     optimise_materials: bpy.props.BoolProperty(
         name="Optimise Materials",
