@@ -15,6 +15,7 @@ for /f %%i in ('echo %date%') do set DATE=%%i
 set "ZIP_NAME=%NAME%-%VERSION%-%DATE%-%HASH%"
 set PYFFI_VERSION="2.2.4.dev3"
 set DEPS="io_scene_niftools\dependencies"
+set "GENERATED_FOLDER=%ROOT%\dependencies\nifgen"
 if exist "%DIR%\temp" rmdir /s /q "%DIR%\temp"
 
 mkdir "%DIR%"\temp
