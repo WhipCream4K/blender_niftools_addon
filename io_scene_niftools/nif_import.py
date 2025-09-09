@@ -120,7 +120,7 @@ class NifImport(NifCommon):
                         # fix parenting and update transform accordingly
                         b.skin_instance.data.set_transform(root.get_transform() * b.skin_instance.data.get_transform())
                         b.skin_instance.skeleton_root = root
-                        # delete non-skeleton nodes if we're importing skeleton only
+                        # delete non-skeleton nodes if we're importing skeleton only (but not for SKELETON_AND_GEOMETRY)
                         if NifOp.props.process == "SKELETON_ONLY":
                             nonbip_children = (child for child in root.children if child.name[:6] != 'Bip01 ')
                             for child in nonbip_children:
@@ -196,7 +196,7 @@ class NifImport(NifCommon):
             return None
 
         NifLog.info(f"Importing data for block '{n_block.name}'")
-        if self.objecthelper.has_geometry(n_block) and NifOp.props.process != "SKELETON_ONLY":
+        if self.objecthelper.has_geometry(n_block) and NifOp.props.process not in ("SKELETON_ONLY",):
             return self.objecthelper.import_geometry_object(b_armature, n_block)
 
         elif isinstance(n_block, NifClasses.NiNode):
@@ -217,7 +217,7 @@ class NifImport(NifCommon):
             elif self.armaturehelper.is_bone(n_block):
                 # bones have already been imported during import_armature
                 n_name = block_store.import_name(n_block)
-                if n_name in b_armature.data.bones:
+                if b_armature and n_name in b_armature.data.bones:
                     b_obj = b_armature.data.bones[n_name]
                 else:
                     # this is a fallback for a weird bug, when a node is child of a NiLodNode in a skeletal nif
@@ -236,7 +236,7 @@ class NifImport(NifCommon):
                     b_children.append(b_child)
 
             # import collision objects & bounding box
-            if NifOp.props.process != "SKELETON_ONLY":
+            if NifOp.props.process not in ("SKELETON_ONLY",):
                 b_children.extend(self.import_collision(n_block))
                 b_children.extend(self.boundhelper.import_bounding_box(n_block))
 

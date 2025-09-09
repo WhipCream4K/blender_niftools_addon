@@ -366,7 +366,7 @@ class Armature:
             # one is enough to require an armature, so stop
             return
         # force import of nodes as bones, even if no geometries are present
-        if NifOp.props.process == "SKELETON_ONLY":
+        if NifOp.props.process in ("SKELETON_ONLY", "SKELETON_AND_GEOMETRY"):
             self.skinned = True
         NifLog.debug(f"Found no skinned geometries.")
 
@@ -380,6 +380,45 @@ class Armature:
         if isinstance(n_block, NifClasses.NiNode):
             # we have skinning and are waiting for a suitable start node of the tree
             if self.skinned and not self.n_armature:
-                # now store it as the nif armature's root
-                self.n_armature = n_block
-                return True
+                # For SKELETON_AND_GEOMETRY, use a more flexible approach to find the armature root
+                from io_scene_niftools.utils.singleton import NifOp
+                if NifOp.props.process == "SKELETON_AND_GEOMETRY":
+                    # First priority: Check if this node has a NiControllerManager
+                    NifLog.info(f"Checking node {n_block.name} for controllers")
+                    if hasattr(n_block, "controller"):
+                        NifLog.info(f"Node {n_block.name} has controllers")
+                        controller = n_block.controller
+                        while controller:
+                            NifLog.info(f"  - Controller type: {controller.__class__.__name__}")
+                            if isinstance(controller, NifClasses.NiTransformController):
+                                self.n_armature = n_block
+                                NifLog.info(f"Using {n_block.name} as armature root (has NiTransformController)")
+                                return True
+                            controller = controller.next_controller
+                    
+                    # Second priority: Check for nodes with Bip01 in the name
+                    # if "Bip01" in n_block.name:
+                    #     self.n_armature = n_block
+                    #     NifLog.info(f"Using {n_block.name} as armature root (has Bip01 in name)")
+                    #     return True
+                    
+                    # # Third priority: If this is a node with children that have Bip01 in their names
+                    # for child in n_block.children:
+                    #     if isinstance(child, NifClasses.NiNode) and "Bip01" in child.name:
+                    #         self.n_armature = n_block
+                    #         NifLog.info(f"Using {n_block.name} as armature root (parent of Bip01 node)")
+                    #         return True
+                    
+                    # # If we're at Scene Root, use it as a last resort
+                    # if n_block.name == "Scene Root":
+                    #     # Only use Scene Root if it has children with bone-like names
+                    #     for child in n_block.children:
+                    #         if isinstance(child, NifClasses.NiNode) and ("Bip" in child.name or "bone" in child.name.lower()):
+                    #             self.n_armature = n_block
+                    #             NifLog.info(f"Using Scene Root as armature root (contains bone-like children)")
+                    #             return True
+                    return False
+                else:
+                    # For other import modes, use the standard logic
+                    self.n_armature = n_block
+                    return True

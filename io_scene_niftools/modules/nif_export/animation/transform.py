@@ -47,6 +47,7 @@ from io_scene_niftools.modules.nif_export.block_registry import block_store
 from io_scene_niftools.utils import math, consts
 from io_scene_niftools.utils.logging import NifError, NifLog
 from io_scene_niftools.utils.consts import QUAT, EULER, LOC, SCALE
+from io_scene_niftools.utils.singleton import NifData
 
 
 class TransformAnimation(Animation):
@@ -75,27 +76,33 @@ class TransformAnimation(Animation):
             kf_root = block_store.create_block("NiSequenceStreamHelper")
         elif nif_scene.is_bs() or game in (
                 'CIVILIZATION_IV', 'ZOO_TYCOON_2', 'FREEDOM_FORCE_VS_THE_3RD_REICH',
-                'SHIN_MEGAMI_TENSEI_IMAGINE', 'SID_MEIER_S_PIRATES'):
+                'SHIN_MEGAMI_TENSEI_IMAGINE', 'SID_MEIER_S_PIRATES', 'PRO_CYCLING_MANAGER'):
             kf_root = block_store.create_block("NiControllerSequence")
         else:
             raise NifError(f"Keyframe export for '{game}' is not supported.")
 
         anim_textextra = self.create_text_keys(kf_root)
-        targetname = "Scene Root"
+        # Set appropriate target name based on game
+        if game == 'PRO_CYCLING_MANAGER':
+            targetname = "Bip01 Base"
+        else:
+            targetname = "Scene Root"
 
         # per-node animation
         if b_armature:
             b_action = self.get_active_action(b_armature)
             for b_bone in b_armature.data.bones:
                 self.export_transforms(kf_root, b_armature, b_action, b_bone)
-            if nif_scene.is_skyrim():
-                targetname = "NPC Root [Root]"
-            else:
-                # quick hack to set correct target name
-                if "Bip01" in b_armature.data.bones:
-                    targetname = "Bip01"
-                elif "Bip02" in b_armature.data.bones:
-                    targetname = "Bip02"
+            # Only override targetname if not PRO_CYCLING_MANAGER
+            if game != 'PRO_CYCLING_MANAGER':
+                if nif_scene.is_skyrim():
+                    targetname = "NPC Root [Root]"
+                else:
+                    # quick hack to set correct target name
+                    if "Bip01" in b_armature.data.bones:
+                        targetname = "Bip01"
+                    elif "Bip02" in b_armature.data.bones:
+                        targetname = "Bip02"
 
         # per-object animation
         else:
@@ -110,8 +117,111 @@ class TransformAnimation(Animation):
         kf_root.weight = 1.0
         kf_root.cycle_type = NifClasses.CycleType.CYCLE_CLAMP
         kf_root.frequency = 1.0
-        if game in ('SID_MEIER_S_PIRATES',):
+        if game in ('SID_MEIER_S_PIRATES', 'PRO_CYCLING_MANAGER'):
             kf_root.accum_root_name = targetname
+            
+            # For PRO_CYCLING_MANAGER, we need to initialize the string palette with bone paths
+            if game == 'PRO_CYCLING_MANAGER' and isinstance(kf_root, NifClasses.NiControllerSequence):
+                # Create string palette if it doesn't exist
+                if not kf_root.string_palette:
+                    kf_root.string_palette = NifClasses.NiStringPalette(NifData.data)
+                
+                # Generate individual bone entries in the string palette
+                if b_armature:
+                    # First add the standard entries
+                    # First add the standard entries
+                    kf_root.string_palette.palette.add_string("Bip01 Position")
+                    kf_root.string_palette.palette.add_string("NiTransformController")
+                    
+                    # Add each bone name individually
+                    for bone in b_armature.data.bones:
+                        kf_root.string_palette.palette.add_string(bone.name)
+                    
+                    # Add the root bones
+                    kf_root.string_palette.palette.add_string("Bip01 Base")
+                    kf_root.string_palette.palette.add_string("Bip01 Base NonAccum")
+                    
+                    # Create NiTransformInterpolator for each bone
+                    for bone in b_armature.data.bones:
+                        # Create a transform controller for this bone
+                        n_kfc = block_store.create_block("NiTransformController", None)
+                        n_kfi = block_store.create_block("NiTransformInterpolator", None)
+                        
+                        # Set transform values for the interpolator
+                        # Get bone's transform in pose
+                        if bone.name in b_armature.pose.bones:
+                            pose_bone = b_armature.pose.bones[bone.name]
+                            # Set scale using the bone's scale
+                            if hasattr(pose_bone, 'scale') and pose_bone.scale:
+                                # Use average of x,y,z scale for uniform scaling
+                                avg_scale = (pose_bone.scale.x + pose_bone.scale.y + pose_bone.scale.z) / 3.0
+                                n_kfi.scale = avg_scale
+                            else:
+                                # Default scale of 1.0
+                                n_kfi.scale = 1.0
+                            
+                            # Set rotation (convert from Blender to NIF)
+                            if pose_bone.rotation_quaternion:
+                                quat = pose_bone.rotation_quaternion
+                                # Create quaternion for NiTransformInterpolator
+                                rotation = NifClasses.Quaternion(NifData.data)
+                                rotation.x = quat.x
+                                rotation.y = quat.y
+                                rotation.z = quat.z
+                                rotation.w = quat.w
+                                n_kfi.rotation = rotation
+                            else:
+                                # Default identity quaternion
+                                rotation = NifClasses.Quaternion(NifData.data)
+                                rotation.x = 0.0
+                                rotation.y = 0.0
+                                rotation.z = 0.0
+                                rotation.w = 1.0
+                                n_kfi.rotation = rotation
+                            
+                            # Set translation
+                            if pose_bone.location:
+                                # Create vector3 for NiTransformInterpolator
+                                translation = NifClasses.Vector3(NifData.data)
+                                translation.x = pose_bone.location.x
+                                translation.y = pose_bone.location.y
+                                translation.z = pose_bone.location.z
+                                n_kfi.translation = translation
+                        else:
+                            # Default values if bone not found in pose
+                            n_kfi.scale = 1.0
+                            
+                            # Default identity quaternion
+                            rotation = NifClasses.Quaternion(NifData.data)
+                            rotation.x = 0.0
+                            rotation.y = 0.0
+                            rotation.z = 0.0
+                            rotation.w = 1.0
+                            n_kfi.rotation = rotation
+                            
+                            # Default zero translation
+                            translation = NifClasses.Vector3(NifData.data)
+                            translation.x = 0.0
+                            translation.y = 0.0
+                            translation.z = 0.0
+                            n_kfi.translation = translation
+                        
+                        # Link interpolator to controller
+                        n_kfc.interpolator = n_kfi
+                        
+                        # Add to controlled blocks
+                        controlled_block = kf_root.add_controlled_block()
+                        controlled_block.interpolator = n_kfi
+                        controlled_block.node_name = bone.name
+                        controlled_block.controller_type = "NiTransformController"
+                        
+                        # Assign string palette
+                        controlled_block.string_palette = kf_root.string_palette
+                        
+                        # Add strings to palette and store offsets
+                        palette = controlled_block.string_palette.palette
+                        controlled_block.node_name_offset = palette.add_string(controlled_block.node_name)
+                        controlled_block.controller_type_offset = palette.add_string(controlled_block.controller_type)
 
         if anim_textextra.num_text_keys > 0:
             kf_root.start_time = anim_textextra.text_keys[0].time

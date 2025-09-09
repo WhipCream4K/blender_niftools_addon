@@ -96,6 +96,7 @@ class NifImportOperator(Operator, ImportHelper, CommonScale, CommonDevOperator, 
         items=(
             ("EVERYTHING", "Everything", "Import everything"),
             ("SKELETON_ONLY", "Skeleton Only", "Import skeleton only and make it parent of selected geometry"),
+            ("SKELETON_AND_GEOMETRY", "Skeleton and Visual Geometry", "Import skeleton as armature and keep visual geometry (like Biped objects)"),
             ("GEOMETRY_ONLY", "Geometry Only", "Import geometry only and parent them to selected skeleton"),
         ),
         name="Process",
