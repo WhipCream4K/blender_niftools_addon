@@ -57,17 +57,25 @@ class Material:
         blend_enable = 1 & n_alpha_prop.flags
         test_enable = (1 << 9) & n_alpha_prop.flags
         if blend_enable and test_enable:
-            b_mat.blend_method = "HASHED"
-            b_mat.shadow_method = "HASHED"
+            blend_value = "HASHED"
+            shadow_value = "HASHED"
         elif blend_enable:
-            b_mat.blend_method = "BLEND"
-            b_mat.shadow_method = "HASHED"
+            blend_value = "BLEND"
+            shadow_value = "HASHED"
         elif test_enable:
-            b_mat.blend_method = "CLIP"
-            b_mat.shadow_method = "CLIP"
+            blend_value = "CLIP"
+            shadow_value = "CLIP"
         else:
-            b_mat.blend_method = "OPAQUE"
-            b_mat.shadow_method = "OPAQUE"
+            blend_value = "OPAQUE"
+            shadow_value = "OPAQUE"
+
+        # Set blend method (exists in Blender 4.5)
+        b_mat.blend_method = blend_value
+
+        # shadow_method was removed/changed in Blender 4.x (Eevee Next).
+        # Guard to maintain compatibility with older Blender versions.
+        if hasattr(b_mat, "shadow_method"):
+            b_mat.shadow_method = shadow_value
 
         b_mat.alpha_threshold = n_alpha_prop.threshold / 255  # transparency threshold
         b_mat.niftools_alpha.alphaflag = n_alpha_prop.flags
