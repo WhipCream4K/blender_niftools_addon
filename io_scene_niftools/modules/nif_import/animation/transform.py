@@ -210,6 +210,9 @@ class TransformAnimation(Animation):
         for b_action in actions:
             if b_action:
                 self.import_text_keys(kf_root, b_action)
+                # Store cycle_type as custom property for export
+                if hasattr(kf_root, 'cycle_type'):
+                    b_action["nif_cycle_type"] = int(kf_root.cycle_type)
                 # fallout: set global extrapolation mode here (older versions have extrapolation per controller)
                 if kf_root.cycle_type:
                     extend = self.get_extend_from_cycle_type(kf_root.cycle_type)
@@ -227,8 +230,19 @@ class TransformAnimation(Animation):
         if not b_target:
             return
         NifLog.debug(f'Importing keyframe controller for {b_target.name}')
+        
+        # Check if this interpolator has any actual keyframe data
+        has_keyframe_data = False
+        n_kfd = self.get_controller_data(n_kfc)
+        if n_kfd and isinstance(n_kfd, NifClasses.NiKeyframeData):
+            has_keyframe_data = (n_kfd.num_rotation_keys > 0 or 
+                                 (hasattr(n_kfd.translations, 'num_keys') and n_kfd.translations.num_keys > 0) or
+                                 (hasattr(n_kfd.scales, 'num_keys') and n_kfd.scales.num_keys > 0))
+        elif n_kfd and isinstance(n_kfd, NifClasses.NiTransformData):
+            has_keyframe_data = (n_kfd.num_rotation_keys > 0 or 
+                                 (hasattr(n_kfd.translations, 'num_keys') and n_kfd.translations.num_keys > 0) or
+                                 (hasattr(n_kfd.scales, 'num_keys') and n_kfd.scales.num_keys > 0))
 
-        n_kfd = None
         # fallout, Loki - we set extrapolation according to the root NiControllerSequence.cycle_type
         flags = None
         n_bind_rot_inv = n_bind_trans = None
@@ -244,6 +258,27 @@ class TransformAnimation(Animation):
             # one action per object
             b_action = self.create_action(b_target, f"{b_action_name}_{b_target.name}")
             bone_name = None
+        
+        # If no keyframe data, create bind pose keys so bone is included in export
+        if not has_keyframe_data:
+            NifLog.debug(f'No keyframe data for {b_target.name}, creating bind pose keys')
+            # Create a single keyframe at frame 0 with bind pose (identity transform)
+            # This ensures the bone is exported even without animation
+            if bone_name:
+                # For bones, create location/rotation/scale at bind pose
+                for data_path in ['location', 'rotation_quaternion', 'scale']:
+                    for i in range(3 if data_path in ['location', 'scale'] else 4):
+                        fcu = b_action.fcurves.find(f'pose.bones["{bone_name}"].{data_path}', index=i)
+                        if not fcu:
+                            fcu = b_action.fcurves.new(data_path=f'pose.bones["{bone_name}"].{data_path}', index=i, action_group=bone_name)
+                        # Set bind pose value at frame 0
+                        if data_path == 'location':
+                            fcu.keyframe_points.insert(0, 0.0)
+                        elif data_path == 'rotation_quaternion':
+                            fcu.keyframe_points.insert(0, 1.0 if i == 0 else 0.0)
+                        elif data_path == 'scale':
+                            fcu.keyframe_points.insert(0, 1.0)
+            return b_action
 
         # B-spline curve import
         if isinstance(n_kfc, NifClasses.NiBSplineInterpolator):

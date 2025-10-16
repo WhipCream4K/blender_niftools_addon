@@ -59,13 +59,13 @@ game_version_map = {}
 
 
 def populate_version_map(iterable, version_map):
-	for game in iterable:
-		if game not in version_map:
-		    dummy_context.version = 0
-		    dummy_context.user_version = 0
-		    dummy_context.bs_header.bs_version = 0
-		    set_game(dummy_context, game)
-		    game_version_map[game.name] = (dummy_context.version, dummy_context.user_version, dummy_context.bs_header.bs_version)
+    for game in iterable:
+        if game not in version_map:
+            dummy_context.version = 0
+            dummy_context.user_version = 0
+            dummy_context.bs_header.bs_version = 0
+            set_game(dummy_context, game)
+            game_version_map[game.name] = (dummy_context.version, dummy_context.user_version, dummy_context.bs_header.bs_version)
 
 
 populate_version_map(primary_games, game_version_map)
@@ -76,6 +76,10 @@ game_version_map["UNKNOWN"] = (0, 0, 0)
 def update_version_from_game(self, context):
     """Updates the Scene panel's numerical version fields if its game value has been changed"""
     self.nif_version, self.user_version, self.user_version_2 = game_version_map[self.game]
+
+def _sort_by_name(member):
+    """Helper function for sorting games by name (Cython-compatible)"""
+    return member.name
 
 class Scene(PropertyGroup):
     nif_version: IntProperty(
@@ -101,7 +105,7 @@ class Scene(PropertyGroup):
         items=[('UNKNOWN', 'UNKNOWN', 'No game selected')] + [
             (member.name, member.value, "Export for " + member.value)
             for member in sorted(
-                [member for member in set(all_games)], key=lambda x: x.name)
+                [member for member in set(all_games)], key=_sort_by_name)
         ],
         name="Game",
         description="For which game to export",

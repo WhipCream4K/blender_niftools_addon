@@ -44,6 +44,7 @@ from bpy_extras.io_utils import ExportHelper
 from io_scene_niftools.nif_export import NifExport
 from io_scene_niftools.operators.common_op import CommonDevOperator, CommonNif, CommonScale
 from io_scene_niftools.utils.decorators import register_classes, unregister_classes
+from io_scene_niftools.license_check import require_license
 
 
 class NifExportOperator(Operator, ExportHelper, CommonDevOperator, CommonNif, CommonScale):
@@ -158,6 +159,7 @@ class NifExportOperator(Operator, ExportHelper, CommonDevOperator, CommonNif, Co
     def draw(self, context):
         pass
 
+    @require_license
     def execute(self, context):
         """Execute the export operators: first constructs a
         :class:`~io_scene_niftools.nif_export.NifExport` instance and then

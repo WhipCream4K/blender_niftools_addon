@@ -1,0 +1,12 @@
+# Build requirements for compiling the addon to C extensions
+# Install with: pip install -r requirements-build.txt
+
+# Core compilation tool
+Cython>=3.0.0
+
+# Build tools
+setuptools>=65.0.0
+wheel>=0.40.0
+
+# Optional: For better optimization
+# numpy>=1.24.0  # If your code uses numpy

@@ -92,6 +92,19 @@ def register():
     # addon updater code and configurations in case of broken version, try to register the updater first
     # so that users can revert back to a working version
     NifLog.debug("Starting registration")
+    
+    # License check - verify machine is authorized
+    from . import license_check
+    if not license_check.check_license(use_hash=True):
+        NifLog.error("=" * 60)
+        NifLog.error("LICENSE CHECK FAILED")
+        NifLog.error("This addon is not licensed for this machine")
+        NifLog.error(f"Your machine ID: {license_check.get_machine_identifier()}")
+        NifLog.error("Please contact the developer to obtain a license")
+        NifLog.error("=" * 60)
+        # Optionally: return early to prevent addon from loading
+        # return
+    
     configure_autoupdater()
 
     register_modules(MODS, __name__)

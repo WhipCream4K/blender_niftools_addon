@@ -129,6 +129,35 @@ class TransformAnimation(Animation):
 
             for b_bone in b_armature.data.bones:
                 self.export_transforms(kf_root, b_armature, b_action, b_bone)
+            
+            # For ZONE4, ensure critical nodes exist even without animation
+            # These nodes are searched for by AnimationCompressor.h FindInterpolator() function:
+            # - "Bip01" (line 576) - CRITICAL, causes error if missing
+            # - "Bip01 Position" (line 611) - Used for forward movement/rotation
+            if game == 'ZONE4' and isinstance(kf_root, NifClasses.NiControllerSequence):
+                required_nodes = ["Bip01 Position", "Bip01"]
+                for node_name in required_nodes:
+                    # Check if this bone exists in armature
+                    if node_name in b_armature.data.bones:
+                        # Check if it was already exported (has fcurves)
+                        bone_path_prefix = f"pose.bones[\"{node_name}\"]"
+                        has_fcurves = any(fcu for fcu in (b_action.fcurves if b_action else [])
+                                        if fcu and isinstance(fcu.data_path, str) and fcu.data_path.startswith(bone_path_prefix))
+                        
+                        # If no fcurves, create a controller with identity transform
+                        if not has_fcurves:
+                            NifLog.info(f"Adding required ZONE4 node without animation: {node_name}")
+                            n_kfc, n_kfi = self.create_controller(kf_root, node_name, 26)
+                            if n_kfi:
+                                # Set identity transform
+                                n_kfi.transform.translation.x = 0.0
+                                n_kfi.transform.translation.y = 0.0
+                                n_kfi.transform.translation.z = 0.0
+                                n_kfi.transform.rotation.w = 1.0
+                                n_kfi.transform.rotation.x = 0.0
+                                n_kfi.transform.rotation.y = 0.0
+                                n_kfi.transform.rotation.z = 0.0
+                                n_kfi.transform.scale = 1.0
                 
             if nif_scene.is_skyrim():
                 targetname = "NPC Root [Root]"
@@ -153,8 +182,16 @@ class TransformAnimation(Animation):
         kf_root.name = b_action.name
         kf_root.unknown_int_1 = 1
         kf_root.weight = 1.0
-        # set to default CycleType.CYCLE_CLAMP. The user needs to modify animation behaviour in NifSkope
-        kf_root.cycle_type = NifClasses.CycleType.CYCLE_CLAMP 
+        
+        # Restore cycle_type from import if available, otherwise default to CLAMP
+        if "nif_cycle_type" in b_action:
+            kf_root.cycle_type = NifClasses.CycleType(b_action["nif_cycle_type"])
+            NifLog.info(f"Restored cycle_type from import: {kf_root.cycle_type}")
+        else:
+            # New animation created in Blender, default to CLAMP
+            kf_root.cycle_type = NifClasses.CycleType.CYCLE_CLAMP
+            NifLog.info("New animation, using default cycle_type: CYCLE_CLAMP")
+        
         kf_root.frequency = 1.0
         if game in ('SID_MEIER_S_PIRATES', 'ZONE4'):
             kf_root.accum_root_name = targetname
@@ -167,35 +204,6 @@ class TransformAnimation(Animation):
             kf_root.stop_time = scene.frame_end / self.fps
 
         kf_root.target_name = targetname
-        
-        # For ZONE4 ensure core targets exist so downstream compressor finds non-null interpolators
-        if game == 'ZONE4' and isinstance(kf_root, NifClasses.NiControllerSequence):
-            def has_target(name: str) -> bool:
-                try:
-                    arr_size = kf_root.get_array_size()
-                except AttributeError:
-                    arr_size = getattr(kf_root, 'array_size', 0)
-                for idx in range(arr_size or 0):
-                    oname, ptype, ctype, cid, iid = kf_root.get_interp_info_at(idx)
-                    if oname == name:
-                        return True
-                return False
-
-            for core in ("Bip01 Position", "Bip01", "Bip01 Base", "Bip01 Base NonAccum"):
-                if not has_target(core):
-                    # Use normal controller creation so mapping is set up correctly
-                    default_priority = 26
-                    n_kfc, n_kfi = self.create_controller(kf_root, core, default_priority)
-                    if n_kfi:
-                        # Identity pose-only (NOINTERP)
-                        n_kfi.transform.translation.x = 0.0
-                        n_kfi.transform.translation.y = 0.0
-                        n_kfi.transform.translation.z = 0.0
-                        n_kfi.transform.rotation.w = 1.0
-                        n_kfi.transform.rotation.x = 0.0
-                        n_kfi.transform.rotation.y = 0.0
-                        n_kfi.transform.rotation.z = 0.0
-                        n_kfi.transform.scale = 1.0
         return kf_root
 
     def export_transforms(self, parent_block, b_obj, b_action, bone=None):
@@ -234,7 +242,7 @@ class TransformAnimation(Animation):
             bonestr = f" in bone {bone.name}"
             target_name = block_store.get_full_name(bone)
             priority = bone.niftools.priority
-            # If still no fcurves for this bone, nothing to export
+            # If still no fcurves for this bone, skip it (bind pose keys should have been created during import)
             if not exp_fcurves:
                 return
 

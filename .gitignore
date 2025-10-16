@@ -189,3 +189,13 @@ fabric.properties
 
 # Exclude temp build directory
 install/tmp
+
+dist/
+dist_maximum_protection/
+dist_pyarmor
+temp_pyarmor/
+AnimationCompressor.h
+Compressor.cpp
+
+# Local Python embeddable
+python311_embed/
