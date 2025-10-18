@@ -1,0 +1,2 @@
+1. compile this project to pyd and have a licesnse check via mac address.
+2. add proper support for material and texture exports via blender. I have to intelligently choose the embedded texture format with the material that is used in blender proejct.
