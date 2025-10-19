@@ -77,10 +77,6 @@ def update_version_from_game(self, context):
     """Updates the Scene panel's numerical version fields if its game value has been changed"""
     self.nif_version, self.user_version, self.user_version_2 = game_version_map[self.game]
 
-def _sort_by_name(member):
-    """Helper function for sorting games by name (Cython-compatible)"""
-    return member.name
-
 class Scene(PropertyGroup):
     nif_version: IntProperty(
         name='Version',
@@ -105,7 +101,7 @@ class Scene(PropertyGroup):
         items=[('UNKNOWN', 'UNKNOWN', 'No game selected')] + [
             (member.name, member.value, "Export for " + member.value)
             for member in sorted(
-                [member for member in set(all_games)], key=_sort_by_name)
+                [member for member in set(all_games)], key=lambda x: x.name)
         ],
         name="Game",
         description="For which game to export",

@@ -44,6 +44,7 @@ from bpy_extras.io_utils import ImportHelper, orientation_helper
 from io_scene_niftools.nif_import import NifImport
 from io_scene_niftools.operators.common_op import CommonDevOperator, CommonScale, CommonNif
 from io_scene_niftools.utils.decorators import register_classes, unregister_classes
+from io_scene_niftools.license_check import require_license
 
 @orientation_helper(axis_forward='Z', axis_up='-Y')
 class NifImportOperator(Operator, ImportHelper, CommonScale, CommonDevOperator, CommonNif):
@@ -128,6 +129,7 @@ class NifImportOperator(Operator, ImportHelper, CommonScale, CommonDevOperator, 
     def draw(self, context):
         pass
 
+    @require_license
     def execute(self, context):
         """Execute the import operators: first constructs a :class:`~io_scene_niftools.nif_import.NifImport` instance and then
         calls its :meth:`~io_scene_niftools.nif_import.NifImport.execute` method."""

@@ -44,6 +44,7 @@ from bpy_extras.io_utils import ExportHelper
 from io_scene_niftools.kf_export import KfExport
 from io_scene_niftools.operators.common_op import CommonDevOperator, CommonScale, CommonKf
 from io_scene_niftools.utils.decorators import register_classes, unregister_classes
+from io_scene_niftools.license_check import require_license
 
 
 class KfExportOperator(Operator, ExportHelper, CommonDevOperator, CommonScale, CommonKf):
@@ -61,6 +62,7 @@ class KfExportOperator(Operator, ExportHelper, CommonDevOperator, CommonScale, C
         description="Use NiBSAnimationNode (for Morrowind)",
         default=False)
 
+    @require_license
     def execute(self, context):
         """Execute the export operators: first constructs a
         :class:`~io_scene_niftools.nif_export.NifExport` instance and then

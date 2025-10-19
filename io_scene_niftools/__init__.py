@@ -93,18 +93,6 @@ def register():
     # so that users can revert back to a working version
     NifLog.debug("Starting registration")
     
-    # License check - verify machine is authorized
-    from . import license_check
-    if not license_check.check_license(use_hash=True):
-        NifLog.error("=" * 60)
-        NifLog.error("LICENSE CHECK FAILED")
-        NifLog.error("This addon is not licensed for this machine")
-        NifLog.error(f"Your machine ID: {license_check.get_machine_identifier()}")
-        NifLog.error("Please contact the developer to obtain a license")
-        NifLog.error("=" * 60)
-        # Optionally: return early to prevent addon from loading
-        # return
-    
     configure_autoupdater()
 
     register_modules(MODS, __name__)
@@ -126,7 +114,16 @@ def select_zip_file(self, tag):
 
 def configure_autoupdater():
     NifLog.debug("Configuring auto-updater")
-    addon_updater_ops.register(bl_info)
+    # Ensure idempotency across reloads: try to unregister first, then register
+    try:
+        addon_updater_ops.unregister()
+    except Exception:
+        pass
+    try:
+        addon_updater_ops.register(bl_info)
+    except Exception:
+        # If already registered, continue using existing registration
+        pass
     addon_updater_ops.updater.select_link = select_zip_file
     addon_updater_ops.updater.use_releases = True
     addon_updater_ops.updater.remove_pre_update_patterns = ["*.py", "*.pyc", "*.xml", "*.exe", "*.rst", "VERSION", "*.xsd"]

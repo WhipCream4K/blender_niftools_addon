@@ -46,8 +46,8 @@ def get_mac_hash():
     """
     mac = get_mac_address()
     if mac:
-        # Hash the MAC address
-        return hashlib.sha256(mac.encode()).hexdigest()
+        # Hash the MAC address (return uppercase hex for consistent comparison)
+        return hashlib.sha256(mac.encode()).hexdigest().upper()
     return None
 
 
@@ -132,8 +132,9 @@ def check_license(use_hash=True):
     # Fetch whitelist from GitHub
     whitelist = fetch_whitelist(use_hash=use_hash)
     
-    # Check if identifier is in whitelist
-    _license_valid = identifier in whitelist
+    # Check if identifier is in whitelist (case-insensitive)
+    ident_norm = identifier.upper()
+    _license_valid = ident_norm in whitelist
     _license_checked = True
     
     if _license_valid:
@@ -173,13 +174,16 @@ def require_license(func):
         def execute(self, context):
             # Your code here
     """
-    def wrapper(*args, **kwargs):
+    from functools import wraps
+
+    @wraps(func)
+    def wrapper(self, context, *args, **kwargs):
         if not check_license():
-            # License check failed
             NifLog.error("This addon requires a valid license")
             NifLog.error("Please contact the developer")
             return {'CANCELLED'}
-        return func(*args, **kwargs)
+        return func(self, context, *args, **kwargs)
+
     return wrapper
 
 

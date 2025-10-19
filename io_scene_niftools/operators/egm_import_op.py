@@ -43,6 +43,7 @@ from bpy_extras.io_utils import ImportHelper
 from io_scene_niftools import egm_import
 from io_scene_niftools.operators.common_op import CommonDevOperator, CommonEgm, CommonScale
 from io_scene_niftools.utils.decorators import register_classes, unregister_classes
+from io_scene_niftools.license_check import require_license
 
 
 class EgmImportOperator(Operator, ImportHelper, CommonScale, CommonEgm, CommonDevOperator):
@@ -54,6 +55,7 @@ class EgmImportOperator(Operator, ImportHelper, CommonScale, CommonEgm, CommonDe
     # How the nif import operators is labelled in the user interface.
     bl_label = "Import EGM"
 
+    @require_license
     def execute(self, context):
         """Execute the import operators: first constructs a
         :class:`~io_scene_niftools.egm_import.EgmImport` instance and then

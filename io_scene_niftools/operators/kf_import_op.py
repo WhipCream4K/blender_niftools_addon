@@ -44,6 +44,7 @@ from bpy_extras.io_utils import ImportHelper
 from io_scene_niftools.kf_import import KfImport
 from io_scene_niftools.operators.common_op import CommonDevOperator, CommonScale, CommonKf
 from io_scene_niftools.utils.decorators import register_classes, unregister_classes
+from io_scene_niftools.license_check import require_license
 
 
 class KfImportOperator(Operator, ImportHelper, CommonDevOperator, CommonScale, CommonKf):
@@ -57,6 +58,7 @@ class KfImportOperator(Operator, ImportHelper, CommonDevOperator, CommonScale, C
 
     files: bpy.props.CollectionProperty(type=PropertyGroup)
 
+    @require_license
     def execute(self, context):
         """Execute the import operators: first constructs a
         :class:`~io_scene_niftools.kf_import.KfImport` instance and then

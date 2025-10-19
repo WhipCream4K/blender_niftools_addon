@@ -199,3 +199,6 @@ Compressor.cpp
 
 # Local Python embeddable
 python311_embed/
+
+dist_obfuscated/
+*.zip
