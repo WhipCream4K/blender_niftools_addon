@@ -62,6 +62,23 @@ class KfExportOperator(Operator, ExportHelper, CommonDevOperator, CommonScale, C
         description="Use NiBSAnimationNode (for Morrowind)",
         default=False)
 
+    # Export character animation (for Zone4).
+    character_animation: bpy.props.BoolProperty(
+        name="Character Animation",
+        description="Export character animation (uses LINEAR_KEY for transforms when game is Zone4)",
+        default=False)
+
+    # Animation cycle type.
+    cycle_type: bpy.props.EnumProperty(
+        items=[
+            ('CYCLE_LOOP', 'Loop', 'Animation loops continuously'),
+            ('CYCLE_REVERSE', 'Reverse', 'Animation plays forward then backward'),
+            ('CYCLE_CLAMP', 'Clamp', 'Animation stops at the end')
+        ],
+        name="Cycle Type",
+        description="How the animation should cycle when it reaches the end",
+        default='CYCLE_CLAMP')
+
     @require_license
     def execute(self, context):
         """Execute the export operators: first constructs a

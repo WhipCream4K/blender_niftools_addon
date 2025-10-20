@@ -46,8 +46,8 @@ from io_scene_niftools.modules.nif_export.animation import Animation
 from io_scene_niftools.modules.nif_export.block_registry import block_store
 from io_scene_niftools.utils import math, consts
 from io_scene_niftools.utils.logging import NifError, NifLog
+from io_scene_niftools.utils.singleton import NifOp
 from io_scene_niftools.utils.consts import QUAT, EULER, LOC, SCALE
-from io_scene_niftools.utils.singleton import NifData
 
 
 class TransformAnimation(Animation):
@@ -76,100 +76,34 @@ class TransformAnimation(Animation):
             kf_root = block_store.create_block("NiSequenceStreamHelper")
         elif nif_scene.is_bs() or game in (
                 'CIVILIZATION_IV', 'ZOO_TYCOON_2', 'FREEDOM_FORCE_VS_THE_3RD_REICH',
-                'SHIN_MEGAMI_TENSEI_IMAGINE', 'SID_MEIER_S_PIRATES', 'ZONE4'):
+                'SHIN_MEGAMI_TENSEI_IMAGINE', 'ZONE4'):
             kf_root = block_store.create_block("NiControllerSequence")
         else:
             raise NifError(f"Keyframe export for '{game}' is not supported.")
 
         anim_textextra = self.create_text_keys(kf_root)
-
         targetname = "Scene Root"
-
-        # If no armature was explicitly provided, try to auto-detect one in the scene
-        if not b_armature:
-            for obj in bpy.data.objects:
-                if getattr(obj, 'type', None) == 'ARMATURE':
-                    b_armature = obj
-                    NifLog.info(f"Auto-detected armature '{b_armature.name}' for KF export")
-                    break
-
-        # Pre-seed string palette for ZONE4 to control ordering before any controllers add strings
-        if game == 'ZONE4' and isinstance(kf_root, NifClasses.NiControllerSequence):
-            if not kf_root.string_palette:
-                kf_root.string_palette = NifClasses.NiStringPalette(NifData.data)
-            palette = kf_root.string_palette.palette
-            # Reference order: 'Bip01 Position' first, then controller type, then bone names, then the two root entries
-            palette.add_string("Bip01 Position")
-            palette.add_string("NiTransformController")
-            # If we already know the armature, add bone names now. If not, they will be appended when we detect it below.
-            if b_armature:
-                for bone in b_armature.data.bones:
-                    palette.add_string(bone.name)
-            # Always add root markers at the end of the palette seeding
-            palette.add_string("Bip01 Base")
-            palette.add_string("Bip01 Base NonAccum")
 
         # per-node animation
         if b_armature:
             b_action = self.get_active_action(b_armature)
-
-            # # If no active action, attempt to pull the first action from NLA tracks
-            # if not b_action and getattr(b_armature, 'animation_data', None):
-            #     nla = b_armature.animation_data.nla_tracks
-            #     for track in nla:
-            #         for strip in getattr(track, 'strips', []):
-            #             if strip and getattr(strip, 'action', None) and strip.action.fcurves:
-            #                 b_action = strip.action
-            #                 NifLog.info(f"Using NLA action '{b_action.name}' for armature '{b_armature.name}'")
-            #                 break
-            #         if b_action:
-            #             break
-            # if not b_action:
-            #     NifLog.info(f"Armature '{b_armature.name}' has no active action and no NLA action with fcurves; bone export will be skipped.")
-
             for b_bone in b_armature.data.bones:
                 self.export_transforms(kf_root, b_armature, b_action, b_bone)
             
-            # For ZONE4, ensure critical nodes exist even without animation
-            # These nodes are searched for by AnimationCompressor.h FindInterpolator() function:
-            # - "Bip01" (line 576) - CRITICAL, causes error if missing
-            # - "Bip01 Position" (line 611) - Used for forward movement/rotation
-            if game == 'ZONE4' and isinstance(kf_root, NifClasses.NiControllerSequence):
-                required_nodes = ["Bip01 Position", "Bip01"]
-                for node_name in required_nodes:
-                    # Check if this bone exists in armature
-                    if node_name in b_armature.data.bones:
-                        # Check if it was already exported (has fcurves)
-                        bone_path_prefix = f"pose.bones[\"{node_name}\"]"
-                        has_fcurves = any(fcu for fcu in (b_action.fcurves if b_action else [])
-                                        if fcu and isinstance(fcu.data_path, str) and fcu.data_path.startswith(bone_path_prefix))
-                        
-                        # If no fcurves, create a controller with identity transform
-                        if not has_fcurves:
-                            NifLog.info(f"Adding required ZONE4 node without animation: {node_name}")
-                            n_kfc, n_kfi = self.create_controller(kf_root, node_name, 26)
-                            if n_kfi:
-                                # Set identity transform
-                                n_kfi.transform.translation.x = 0.0
-                                n_kfi.transform.translation.y = 0.0
-                                n_kfi.transform.translation.z = 0.0
-                                n_kfi.transform.rotation.w = 1.0
-                                n_kfi.transform.rotation.x = 0.0
-                                n_kfi.transform.rotation.y = 0.0
-                                n_kfi.transform.rotation.z = 0.0
-                                n_kfi.transform.scale = 1.0
-                
-            if nif_scene.is_skyrim():
+            # Check for Zone4 character animation first
+            if game == 'ZONE4' and hasattr(NifOp.props, 'character_animation'):
+                if NifOp.props.character_animation:
+                    targetname = "Bip01 Base"
+                else:
+                    targetname = b_armature.name
+            elif nif_scene.is_skyrim():
                 targetname = "NPC Root [Root]"
             else:
                 # quick hack to set correct target name
-                if game == 'ZONE4':
-                    targetname = "Bip01 Base"
-                elif "Bip01" in b_armature.data.bones:
+                if "Bip01" in b_armature.data.bones:
                     targetname = "Bip01"
                 elif "Bip02" in b_armature.data.bones:
                     targetname = "Bip02"
-
 
         # per-object animation
         else:
@@ -182,19 +116,18 @@ class TransformAnimation(Animation):
         kf_root.name = b_action.name
         kf_root.unknown_int_1 = 1
         kf_root.weight = 1.0
-        
-        # Restore cycle_type from import if available, otherwise default to CLAMP
+        # Restore cycle_type from import if available, otherwise use export option
         if "nif_cycle_type" in b_action:
             kf_root.cycle_type = NifClasses.CycleType(b_action["nif_cycle_type"])
             NifLog.info(f"Restored cycle_type from import: {kf_root.cycle_type}")
+        elif hasattr(NifOp.props, 'cycle_type'):
+            kf_root.cycle_type = getattr(NifClasses.CycleType, NifOp.props.cycle_type)
+            NifLog.info(f"Using cycle_type from export options: {kf_root.cycle_type}")
         else:
-            # New animation created in Blender, default to CLAMP
+            # Default to CLAMP for new animations created in Blender
             kf_root.cycle_type = NifClasses.CycleType.CYCLE_CLAMP
-            NifLog.info("New animation, using default cycle_type: CYCLE_CLAMP")
-        
+            NifLog.info("Using default cycle_type: CYCLE_CLAMP")
         kf_root.frequency = 1.0
-        if game in ('SID_MEIER_S_PIRATES', 'ZONE4'):
-            kf_root.accum_root_name = targetname
 
         if anim_textextra.num_text_keys > 0:
             kf_root.start_time = anim_textextra.text_keys[0].time
@@ -203,7 +136,10 @@ class TransformAnimation(Animation):
             kf_root.start_time = scene.frame_start / self.fps
             kf_root.stop_time = scene.frame_end / self.fps
 
-        kf_root.target_name = targetname
+        if game == 'ZONE4':
+            kf_root.accum_root_name = targetname
+        else:
+            kf_root.target_name = targetname
         return kf_root
 
     def export_transforms(self, parent_block, b_obj, b_action, bone=None):
@@ -212,7 +148,7 @@ class TransformAnimation(Animation):
         If a bone is given, skeletal animation is exported.
         """
 
-        # If there's no action, skip exporting transforms (pose-only workaround removed)
+        # b_action may be None, then nothing is done.
         if not b_action:
             return
 
@@ -226,25 +162,14 @@ class TransformAnimation(Animation):
         bonestr = ""
 
         # skeletal animation - with bone correction & coordinate corrections
-        if bone:
+        if bone and bone.name in b_action.groups:
             # get bind matrix for bone
             bind_matrix = math.get_object_bind(bone)
-            # Prefer collecting fcurves by explicit data_path to avoid relying on group presence
-            bone_path_prefix = f"pose.bones[\"{bone.name}\"]"
-            exp_fcurves = [
-                fcu for fcu in b_action.fcurves
-                if fcu and isinstance(fcu.data_path, str) and fcu.data_path.startswith(bone_path_prefix)
-            ]
-            # If nothing collected via data_path, fall back to action groups if available
-            if not exp_fcurves and bone.name in b_action.groups:
-                exp_fcurves = list(b_action.groups[bone.name].channels)
+            exp_fcurves = b_action.groups[bone.name].channels
             # just for more detailed error reporting later on
             bonestr = f" in bone {bone.name}"
             target_name = block_store.get_full_name(bone)
             priority = bone.niftools.priority
-            # If still no fcurves for this bone, skip it (bind pose keys should have been created during import)
-            if not exp_fcurves:
-                return
 
         # object level animation - no coordinate corrections
         elif not bone:
@@ -264,9 +189,7 @@ class TransformAnimation(Animation):
             # matrix_local = matrix_parent_inverse * matrix_basis
             bind_matrix = b_obj.matrix_parent_inverse
             exp_fcurves = [fcu for fcu in b_action.fcurves if
-                       fcu.data_path in (QUAT, EULER, LOC, SCALE)]
-            if not exp_fcurves:
-                return
+                           fcu.data_path in (QUAT, EULER, LOC, SCALE)]
 
         else:
             # bone isn't keyframed in this action, nothing to do here
@@ -358,14 +281,14 @@ class TransformAnimation(Animation):
             # add the keyframe data
             n_kfd = block_store.create_block("NiKeyframeData", exp_fcurves)
             n_kfc.data = n_kfd
-            NifLog.info(f"Using NiKeyframeData for '{target_name}' (old NIF version)")
 
         # TODO [animation] support other interpolation modes, get interpolation from blender?
         #                  probably requires additional data like tangents and stuff
 
         # finally we can export the data calculated above
-        # Special-case: ZONE4 requires quaternion LINKEY (compressor only accepts NiRotKey::LINKEY).
-        force_pcm_quat_lin = (bpy.context.scene.niftools_scene.game == 'ZONE4')
+        # Special-case: Character animation requires quaternion LINKEY for proper compression.
+        force_pcm_quat_lin = hasattr(NifOp.props, 'character_animation') and NifOp.props.character_animation
+
 
         if force_pcm_quat_lin:
             # Choose a quaternion curve: prefer authored quats, else derive from eulers
@@ -408,6 +331,7 @@ class TransformAnimation(Animation):
             # Ensure quaternion continuity (avoid sudden flips) by keeping dot(prev, curr) >= 0.
             if not quat_curve and quat_from_euler_curve:
                 quat_curve = quat_from_euler_curve
+
 
             if quat_curve:
                 # continuity fix
@@ -493,17 +417,3 @@ class TransformAnimation(Animation):
                 NifLog.warn(f"Marker out of animated range ({f} not between [{f0}, {f1}])")
             key.time = f / self.fps
             key.value = marker.name.replace('/', '\r\n')
-
-    def add_dummy_controllers(self):
-        NifLog.info("Adding controllers and interpolators for skeleton")
-        # note: block_store.block_to_obj changes during iteration, so need list copy
-        for n_block in list(block_store.block_to_obj.keys()):
-            if isinstance(n_block, NifClasses.NiNode) and n_block.name == "Bip01":
-                for n_bone in n_block.tree(block_type=NifClasses.NiNode):
-                    n_kfc, n_kfi = self.transform_anim.create_controller(n_bone, n_bone.name)
-                    # todo [anim] use self.nif_export.animationhelper.set_flags_and_timing
-                    n_kfc.flags = 12
-                    n_kfc.frequency = 1.0
-                    n_kfc.phase = 0.0
-                    n_kfc.start_time = consts.FLOAT_MAX
-                    n_kfc.stop_time = consts.FLOAT_MIN
