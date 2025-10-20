@@ -644,8 +644,8 @@ class Mesh:
         else:
             if len(b_uv_layers) > 1:
                 NifLog.warn(f"More than one UV layers for game that doesn't support it, only using first UV layer")
+        n_geom.data.reset_field("uv_sets")
         if data_flags.has_uv:
-            n_geom.data.reset_field("uv_sets")
             uv_coords = vertex_information['UV']
             for j, n_uv_set in enumerate(n_geom.data.uv_sets):
                 for i, n_uv in enumerate(n_uv_set):

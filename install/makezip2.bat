@@ -29,13 +29,13 @@ python -m pip install "PyFFI==%PYFFI_VERSION%" --target="%DEPS%"
 
 xcopy "%GENERATED_FOLDER%" "%DEPS%\nifgen" /s /q /i
 
-:: Copy obfuscated files
-xcopy "%ROOT%\dist_obfuscated\license_check.py" "io_scene_niftools" /y
-xcopy "%ROOT%\dist_obfuscated\nif_export_op.py" "io_scene_niftools\operators" /y
-xcopy "%ROOT%\dist_obfuscated\nif_import_op.py" "io_scene_niftools\operators" /y
-xcopy "%ROOT%\dist_obfuscated\kf_export_op.py" "io_scene_niftools\operators" /y
-xcopy "%ROOT%\dist_obfuscated\kf_import_op.py" "io_scene_niftools\operators" /y
-xcopy "%ROOT%\dist_obfuscated\egm_import_op.py" "io_scene_niftools\operators" /y
+:: Copy all obfuscated .py files recursively preserving structure
+xcopy /e /i /y "%ROOT%\dist_obfuscated" "%DIR%\temp\io_scene_niftools"
+
+:: Remove pyarmor_runtime_000000 from the copied files (keep it only in dependencies)
+if exist "%DIR%\temp\io_scene_niftools\pyarmor_runtime_000000" (
+    rmdir /s /q "%DIR%\temp\io_scene_niftools\pyarmor_runtime_000000"
+)
 
 :: Copy PyArmor runtime to dependencies
 xcopy /e /i /y "%ROOT%\dist_obfuscated\pyarmor_runtime_000000" "%DEPS%\pyarmor_runtime_000000"

@@ -3,7 +3,7 @@ PyArmor Obfuscation Script (uses Blender's Python if available)
 
 - Finds Blender's bundled Python (or uses sys.executable if already inside Blender).
 - Uses Blender's Python to invoke `python -m pyarmor.cli ...` to avoid ABI/ABI-mismatch issues.
-- Obfuscates only the listed license-related files and writes output into dist_obfuscated.
+- Obfuscates only the listed license-related files and writes output into dist_obfuscated preserving folder structure.
 """
 
 import os
@@ -20,6 +20,10 @@ FILES_TO_OBFUSCATE = [
     "io_scene_niftools/operators/kf_export_op.py",
     "io_scene_niftools/operators/kf_import_op.py",
     "io_scene_niftools/operators/egm_import_op.py",
+    "io_scene_niftools/kf_import.py",
+    "io_scene_niftools/kf_export.py",
+    "io_scene_niftools/nif_import.py",
+    "io_scene_niftools/nif_export.py",
 ]
 
 # Configure output directories and runtime folder name used by your addon
@@ -164,21 +168,6 @@ def obfuscate_files():
         print(f"  {blender_python} -m pip install --user --upgrade pyarmor")
         sys.exit(1)
 
-    # Optionally: generate a runtime for the target platform once (free mode).
-    # Uncomment the next block if you want the script to also produce the runtime automatically.
-    """
-    print("\nGenerating PyArmor runtime for Windows x86_64...")
-    rc, out, err = run_pyarmor_gen_runtime(blender_python, "windows.x86_64", str(RUNTIME_OUTPUT_PATH))
-    if rc != 0:
-        print("✗ Failed to generate runtime:")
-        print(err or out)
-        print("You can try running the following manually:")
-        print(f"  {blender_python} -m pyarmor.cli gen runtime --platform windows.x86_64 -O {RUNTIME_OUTPUT_PATH}")
-        # But we won't abort; you can still obfuscate files without regenerating runtime here.
-    else:
-        print("✓ Runtime generated at:", RUNTIME_OUTPUT_PATH)
-    """
-
     # Obfuscate each file
     for rel in FILES_TO_OBFUSCATE:
         src = project_root / rel
@@ -186,12 +175,20 @@ def obfuscate_files():
             print(f"\n✗ File not found, skipping: {src}")
             continue
 
+        # Determine output directory preserving folder structure
+        rel_parts = Path(rel).parts
+        if len(rel_parts) > 2:  # e.g., io_scene_niftools/operators/file.py
+            out_subdir = dist_dir / Path(*rel_parts[1:-1])
+        else:  # e.g., io_scene_niftools/file.py
+            out_subdir = dist_dir
+
+        out_subdir.mkdir(parents=True, exist_ok=True)
+
         print(f"\n→ Obfuscating: {rel}")
-        rc, out, err = run_pyarmor_gen_file(blender_python, str(src), str(dist_dir))
+        rc, out, err = run_pyarmor_gen_file(blender_python, str(src), str(out_subdir))
         if rc == 0:
             print("  ✓ Successfully obfuscated")
-            # Optionally print a short path to obf file(s)
-            print("  Output directory:", dist_dir)
+            print("  Output directory:", out_subdir)
         else:
             print("  ✗ Obfuscation failed")
             if err:
