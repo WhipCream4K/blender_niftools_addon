@@ -276,6 +276,10 @@ class TransformAnimation(Animation):
         bind_scale, bind_rot, bind_trans = math.decompose_srt(bind_matrix)
         n_kfc, n_kfi = self.create_controller(parent_block, target_name, priority)
 
+        # If no controller was created (e.g., GEOM_NIF mode), skip animation export
+        if not n_kfc:
+            return
+
         # fill in the non-trivial values
         start_frame, stop_frame = b_action.frame_range
         self.set_flags_and_timing(n_kfc, exp_fcurves, start_frame, stop_frame)

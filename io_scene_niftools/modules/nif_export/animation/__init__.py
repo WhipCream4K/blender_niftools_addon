@@ -116,7 +116,7 @@ class Animation(ABC):
         n_kfc = None
 
         try:
-            if NifOp.props.animation == 'GEOM_NIF' and NifData.data.version < 0x0A020000:
+            if NifOp.props.animation == 'GEOM_NIF':
                 # keyframe controllers are not present in geometry only files
                 # for more recent versions, the controller and interpolators are
                 # present, only the data is not present (see further on)
