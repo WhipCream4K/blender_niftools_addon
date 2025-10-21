@@ -247,16 +247,52 @@ class Mesh:
 
             # todo [mesh/object] use more sophisticated armature finding, also taking armature modifier into account
             # now export the vertex weights, if there are any
+            NifLog.info(f"[SKIN EXPORT] Checking mesh '{b_obj.name}' for skinning...")
+            NifLog.info(f"[SKIN EXPORT]   Parent: {b_obj.parent.name if b_obj.parent else 'None'}")
+            NifLog.info(f"[SKIN EXPORT]   Parent type: {b_obj.parent.type if b_obj.parent else 'None'}")
+            NifLog.info(f"[SKIN EXPORT]   Vertex groups: {[vg.name for vg in b_obj.vertex_groups]}")
+            
+            # Try to find armature: first check direct parent, then search scene
+            b_obj_armature = None
             if b_obj.parent and b_obj.parent.type == 'ARMATURE':
                 b_obj_armature = b_obj.parent
+                NifLog.info(f"[SKIN EXPORT]   Found armature as direct parent: {b_obj_armature.name}")
+            else:
+                # Search for armature in the scene by matching vertex group names to bone names
+                vertgroups = {vertex_group.name for vertex_group in b_obj.vertex_groups}
+                if vertgroups:
+                    NifLog.info(f"[SKIN EXPORT]   Direct parent is not armature, searching for matching armature...")
+                    for obj in bpy.data.objects:
+                        if obj.type == 'ARMATURE':
+                            bone_names = set(obj.data.bones.keys())
+                            boneinfluences = vertgroups & bone_names
+                            if boneinfluences:
+                                b_obj_armature = obj
+                                NifLog.info(f"[SKIN EXPORT]   Found matching armature: {b_obj_armature.name} with {len(boneinfluences)} matching bones")
+                                break
+            
+            if b_obj_armature:
                 vertgroups = {vertex_group.name for vertex_group in b_obj.vertex_groups}
                 bone_names = set(b_obj_armature.data.bones.keys())
                 # the vertgroups that correspond to bone_names are bones that influence the mesh
                 boneinfluences = vertgroups & bone_names
+                
+                # CRITICAL: Preserve bone order from armature, NOT alphabetical
+                # NiSkinInstance.bones[] order MUST match NiSkinData.bone_list[] order
+                # and vertex weights are calculated based on this order
+                armature_bone_order = [b.name for b in b_obj_armature.data.bones]
+                boneinfluences_ordered = [b for b in armature_bone_order if b in boneinfluences]
+                boneinfluences = boneinfluences_ordered
+                NifLog.info(f"[SKIN EXPORT] Bone order from armature: {list(boneinfluences)}")
+                
+                NifLog.info(f"[SKIN EXPORT]   Bone influences found: {boneinfluences}")
                 if boneinfluences:  # yes we have skinning!
+                    NifLog.info(f"[SKIN EXPORT] Found {len(boneinfluences)} bone influences for mesh '{b_obj.name}'")
+                    NifLog.info(f"[SKIN EXPORT] Bone names: {boneinfluences}")
                     # create new skinning instance block and link it
                     skininst, skindata = self.create_skin_inst_data(b_obj, b_obj_armature, polygon_parts)
                     n_geom.skin_instance = skininst
+                    NifLog.info(f"[SKIN EXPORT] Linked skin instance to geometry")
 
                     # Vertex weights,  find weights and normalization factors
                     vert_list = {}
@@ -290,6 +326,8 @@ class Mesh:
                     self.select_unweighted_vertices(b_obj, unweighted_vertices)
 
                     # for each bone, get the vertex weights and add its n_node to the NiSkinData
+                    NifLog.info(f"[SKIN EXPORT] Processing bone weights...")
+                    NifLog.info(f"[SKIN EXPORT] Bone order for weights: {list(boneinfluences)}")
                     for b_bone_name in boneinfluences:
                         # find vertex weights
                         vert_weights = {}
@@ -309,18 +347,89 @@ class Mesh:
                         if vert_weights:
                             # find bone in exported blocks
                             n_node = self.get_bone_block(b_obj_armature.data.bones[b_bone_name])
+                            if n_node:
+                                NifLog.info(f"[SKIN EXPORT]   Bone '{b_bone_name}': {len(vert_weights)} vertices weighted, block name: '{n_node.name}'")
+                            else:
+                                NifLog.error(f"[SKIN EXPORT]   ERROR: Bone '{b_bone_name}' not found in exported blocks!")
                             n_geom.add_bone(n_node, vert_weights)
+                        else:
+                            NifLog.warn(f"[SKIN EXPORT]   Bone '{b_bone_name}': No weighted vertices, skipping")
                     del vert_weights
 
                     # update bind position skinning data
                     # n_geom.update_bind_position()
                     # override pyffi n_geom.update_bind_position with custom one that is relative to the nif root
+                    NifLog.info(f"[SKIN EXPORT] Updating bind position...")
                     self.update_bind_position(n_geom, n_root, b_obj_armature)
 
                     # calculate center and radius for each skin bone data block
+                    NifLog.info(f"[SKIN EXPORT] Calculating skin center and radius...")
                     n_geom.update_skin_center_radius()
+                    
+                    # Log final skin data summary
+                    if n_geom.skin_instance:
+                        skin_data = n_geom.skin_instance.data
+                        NifLog.info(f"[SKIN EXPORT] Final bone count: {skin_data.num_bones}")
+                        NifLog.info(f"[SKIN EXPORT] Skeleton root: '{n_geom.skin_instance.skeleton_root.name if n_geom.skin_instance.skeleton_root else 'None'}'")
+                        
+                        # CRITICAL: Verify bone order consistency
+                        NifLog.info(f"[SKIN EXPORT] ========== Bone Order Verification ==========")
+                        NifLog.info(f"[SKIN EXPORT] NiSkinInstance.bones[] order:")
+                        for i, bone_node in enumerate(n_geom.skin_instance.bones):
+                            if i < skin_data.num_bones:
+                                NifLog.info(f"[SKIN EXPORT]   [{i}] {bone_node.name}")
+                        NifLog.info(f"[SKIN EXPORT] NiSkinData.bone_list[] order:")
+                        for i, bone_data in enumerate(skin_data.bone_list):
+                            bone_name = n_geom.skin_instance.bones[i].name if i < len(n_geom.skin_instance.bones) else 'Unknown'
+                            NifLog.info(f"[SKIN EXPORT]   [{i}] {bone_name}")
+                        NifLog.info(f"[SKIN EXPORT] ========== Bone Order Verification Complete ==========")
+                        
+                        # Log skin transform data
+                        try:
+                            skin_transform = skin_data.get_transform()
+                            scale, rotation, translation = skin_transform.get_scale_rotation_translation()
+                            NifLog.info(f"[SKIN EXPORT] Skin transform:")
+                            NifLog.info(f"[SKIN EXPORT]   Translation: ({translation.x:.6f}, {translation.y:.6f}, {translation.z:.6f})")
+                            NifLog.info(f"[SKIN EXPORT]   Scale: {scale:.6f}")
+                        except Exception as e:
+                            NifLog.warn(f"[SKIN EXPORT] Could not log skin transform: {e}")
+                        
+                        # Log detailed bone data
+                        for i, bone_data in enumerate(skin_data.bone_list):
+                            bone_name = n_geom.skin_instance.bones[i].name if i < len(n_geom.skin_instance.bones) else 'Unknown'
+                            NifLog.info(f"[SKIN EXPORT]   Bone {i} ('{bone_name}'): num_vertices={bone_data.num_vertices}")
+                            
+                            # Log bone transform
+                            try:
+                                bone_transform = bone_data.get_transform()
+                                scale, rotation, translation = bone_transform.get_scale_rotation_translation()
+                                NifLog.info(f"[SKIN EXPORT]     Transform:")
+                                NifLog.info(f"[SKIN EXPORT]       Translation: ({translation.x:.6f}, {translation.y:.6f}, {translation.z:.6f})")
+                                NifLog.info(f"[SKIN EXPORT]       Scale: {scale:.6f}")
+                            except Exception as e:
+                                NifLog.warn(f"[SKIN EXPORT]     Could not log bone transform: {e}")
+                            
+                            # Log bounding sphere (center and radius)
+                            try:
+                                bound = bone_data.bounding_sphere
+                                NifLog.info(f"[SKIN EXPORT]     Bounding Sphere:")
+                                NifLog.info(f"[SKIN EXPORT]       Center: ({bound.center.x:.6f}, {bound.center.y:.6f}, {bound.center.z:.6f})")
+                                NifLog.info(f"[SKIN EXPORT]       Radius: {bound.radius:.6f}")
+                            except Exception as e:
+                                NifLog.warn(f"[SKIN EXPORT]     Could not log bounding sphere: {e}")
 
+                    NifLog.info(f"[SKIN EXPORT] Exporting skin partition...")
                     self.export_skin_partition(b_obj, bodypartfacemap, triangles, n_geom)
+                    NifLog.info(f"[SKIN EXPORT] ========== Skin Export Complete ==========")
+                else:
+                    NifLog.info(f"[SKIN EXPORT] No bone influences found for mesh '{b_obj.name}' - skipping skin export")
+            else:
+                # No armature found
+                vertgroups = {vertex_group.name for vertex_group in b_obj.vertex_groups}
+                if vertgroups:
+                    NifLog.warn(f"[SKIN EXPORT] Mesh '{b_obj.name}' has vertex groups but no matching armature found in scene")
+                else:
+                    NifLog.info(f"[SKIN EXPORT] Mesh '{b_obj.name}' has no vertex groups - skipping skin export")
 
             if isinstance(n_geom, NifClasses.NiTriBasedGeom):
                 # fix data consistency type
@@ -661,7 +770,12 @@ class Mesh:
         """Attaches a skin partition to n_geom if needed"""
         game = bpy.context.scene.niftools_scene.game
         if NifData.data.version >= 0x04020100 and NifOp.props.skin_partition:
-            NifLog.info("Creating skin partition")
+            NifLog.info(f"[SKIN PARTITION] Creating skin partition for '{b_obj.name}'")
+            NifLog.info(f"[SKIN PARTITION] Game: {game}")
+            NifLog.info(f"[SKIN PARTITION] Max bones per partition: {NifOp.props.max_bones_per_partition}")
+            NifLog.info(f"[SKIN PARTITION] Max bones per vertex: {NifOp.props.max_bones_per_vertex}")
+            NifLog.info(f"[SKIN PARTITION] Stripify: {NifOp.props.stripify}")
+            NifLog.info(f"[SKIN PARTITION] Pad bones: {NifOp.props.pad_bones}")
 
             # warn on bad config settings
             if game == 'OBLIVION':
@@ -703,25 +817,72 @@ class Mesh:
             if lostweight > NifOp.props.epsilon:
                 NifLog.warn(
                     f"Lost {lostweight:f} in vertex weights while creating a skin partition for Blender object '{b_obj.name}' (nif block '{n_geom.name}')")
+            
+            # Log partition details for validation
+            if n_geom.skin_instance and n_geom.skin_instance.data and n_geom.skin_instance.data.skin_partition:
+                skin_part = n_geom.skin_instance.data.skin_partition
+                NifLog.info(f"[SKIN PARTITION] ========== Partition Summary ==========")
+                NifLog.info(f"[SKIN PARTITION] Number of partitions: {skin_part.num_partitions}")
+                for p_idx, partition in enumerate(skin_part.partitions):
+                    NifLog.info(f"[SKIN PARTITION] Partition {p_idx}:")
+                    NifLog.info(f"[SKIN PARTITION]   Num bones: {partition.num_bones}")
+                    NifLog.info(f"[SKIN PARTITION]   Num vertices: {partition.num_vertices}")
+                    NifLog.info(f"[SKIN PARTITION]   Num triangles: {partition.num_triangles}")
+                    NifLog.info(f"[SKIN PARTITION]   Num weights per vertex: {partition.num_weights_per_vertex}")
+                    NifLog.info(f"[SKIN PARTITION]   Bones: {list(partition.bones[:partition.num_bones])}")
+                    # Validate weights
+                    invalid_weights = 0
+                    invalid_indices = 0
+                    for v_idx in range(partition.num_vertices):
+                        for w_idx in range(partition.num_weights_per_vertex):
+                            weight = partition.vertex_weights[v_idx][w_idx]
+                            bone_idx = partition.bone_indices[v_idx][w_idx]
+                            if weight < 0 or weight > 1.0:
+                                invalid_weights += 1
+                            if bone_idx < 0 or bone_idx >= partition.num_bones:
+                                invalid_indices += 1
+                    if invalid_weights > 0:
+                        NifLog.warn(f"[SKIN PARTITION]   Found {invalid_weights} invalid weights")
+                    if invalid_indices > 0:
+                        NifLog.warn(f"[SKIN PARTITION]   Found {invalid_indices} invalid bone indices")
+                NifLog.info(f"[SKIN PARTITION] ========== Partition Complete ==========")
 
     def update_bind_position(self, n_geom, n_root, b_obj_armature):
         """Transfer the Blender bind position to the nif bind position.
         Sets the NiSkinData overall transform to the inverse of the geometry transform
         relative to the skeleton root, and sets the NiSkinData of each bone to
         the inverse of the transpose of the bone transform relative to the skeleton root, corrected
-        for the overall transform."""
+        for the overall transform.
+        
+        NOTE: Different Gamebryo versions use different bind-pose conventions.
+        Try USE_LEGACY_BIND_CONVENTION = True if meshes flicker in-game.
+        """
         if not n_geom.is_skin():
             return
 
+        # EXPERIMENTAL: Try legacy bind convention for older Gamebryo builds
+        USE_LEGACY_BIND_CONVENTION = True  # Set to True to test older convention
+        
         # validate skin and set up quick links
         n_geom._validate_skin()
         skininst = n_geom.skin_instance
         skindata = skininst.data
         skelroot = skininst.skeleton_root
 
+        NifLog.info(f"[SKIN EXPORT] ========== Bind Position Update ==========")
+        NifLog.info(f"[SKIN EXPORT] Using bind convention: {'LEGACY (older Gamebryo)' if USE_LEGACY_BIND_CONVENTION else 'MODERN (Skyrim/newer)'}")
+
         # calculate overall offset (including the skeleton root transform) and use its inverse
         geomtransform = (n_geom.get_transform(skelroot) * skelroot.get_transform()).get_inverse(fast=False)
         skindata.set_transform(geomtransform)
+        
+        try:
+            scale, rotation, translation = geomtransform.get_scale_rotation_translation()
+            NifLog.info(f"[SKIN EXPORT] Overall skin transform:")
+            NifLog.info(f"[SKIN EXPORT]   Translation: ({translation.x:.6f}, {translation.y:.6f}, {translation.z:.6f})")
+            NifLog.info(f"[SKIN EXPORT]   Scale: {scale:.6f}")
+        except Exception as e:
+            NifLog.warn(f"[SKIN EXPORT] Could not log skin transform: {e}")
 
         # for some nifs, somehow n_root is not set properly?!
         if not n_root:
@@ -736,11 +897,17 @@ class Mesh:
             bone_name = block_store.block_to_obj[bone].name
             pose_bone = b_obj_armature.pose.bones[bone_name]
             n_bind = math.mathutils_to_nifformat_matrix(math.blender_bind_to_nif_bind(pose_bone.matrix))
-            # todo [armature] figure out the correct transform that works universally
-            # inverse skin bind in nif armature space, relative to root / geom??
-            skindata.bone_list[i].set_transform((n_bind * geomtransform).get_inverse(fast=False))
-            # this seems to be correct for skyrim heads, but breaks stuff like ZT2 elephant
-            # skindata.bone_list[i].set_transform(bone.get_transform(n_root).get_inverse())
+            
+            if USE_LEGACY_BIND_CONVENTION:
+                # LEGACY: Simpler convention used by older Gamebryo builds
+                # Just use the bone's transform relative to skeleton root
+                skindata.bone_list[i].set_transform(bone.get_transform(n_root).get_inverse())
+                NifLog.info(f"[SKIN EXPORT] Bone {i} ('{bone_name}'): Using legacy bind convention")
+            else:
+                # MODERN: More complex convention (Skyrim, newer builds)
+                # Compose with geometry transform
+                skindata.bone_list[i].set_transform((n_bind * geomtransform).get_inverse(fast=False))
+                NifLog.info(f"[SKIN EXPORT] Bone {i} ('{bone_name}'): Using modern bind convention")
 
         b_obj_armature.data.pose_position = old_position
 
@@ -775,33 +942,47 @@ class Mesh:
         return polygon_parts
 
     def create_skin_inst_data(self, b_obj, b_obj_armature, polygon_parts):
+        NifLog.info(f"[SKIN EXPORT] ========== Creating Skin Instance for '{b_obj.name}' ==========")
+        NifLog.info(f"[SKIN EXPORT] Armature: '{b_obj_armature.name}'")
+        NifLog.info(f"[SKIN EXPORT] Polygon parts count: {len(polygon_parts)}")
+        
         if bpy.context.scene.niftools_scene.game in ('FALLOUT_3', 'FALLOUT_NV', 'SKYRIM') and len(polygon_parts) > 0:
             skininst = block_store.create_block("BSDismemberSkinInstance", b_obj)
+            NifLog.info(f"[SKIN EXPORT] Created BSDismemberSkinInstance")
         else:
             skininst = block_store.create_block("NiSkinInstance", b_obj)
+            NifLog.info(f"[SKIN EXPORT] Created NiSkinInstance")
 
         # get skeleton root from custom property
         if b_obj.niftools.skeleton_root:
             n_root_name = b_obj.niftools.skeleton_root
+            NifLog.info(f"[SKIN EXPORT] Using custom skeleton root: '{n_root_name}'")
         # or use the armature name
         else:
             n_root_name = block_store.get_full_name(b_obj_armature)
+            NifLog.info(f"[SKIN EXPORT] Using armature as skeleton root: '{n_root_name}'")
+        
         # make sure that such a block exists, find it
         for block in block_store.block_to_obj:
             if isinstance(block, NifClasses.NiNode):
                 if block.name == n_root_name:
                     skininst.skeleton_root = block
+                    NifLog.info(f"[SKIN EXPORT] Found skeleton root block: '{block.name}'")
                     break
         else:
+            NifLog.error(f"[SKIN EXPORT] ERROR: Skeleton root '{n_root_name}' not found in exported blocks!")
             raise NifError(f"Skeleton root '{n_root_name}' not found.")
 
         # create skinning data and link it
         skindata = block_store.create_block("NiSkinData", b_obj)
         skininst.data = skindata
+        NifLog.info(f"[SKIN EXPORT] Created NiSkinData block")
 
         skindata.has_vertex_weights = True
         # fix geometry rest pose: transform relative to skeleton root
-        skindata.set_transform(math.get_object_matrix(b_obj).get_inverse())
+        skin_transform = math.get_object_matrix(b_obj).get_inverse()
+        skindata.set_transform(skin_transform)
+        NifLog.info(f"[SKIN EXPORT] Set skin transform (inverse of object matrix)")
         return skininst, skindata
 
     # TODO [object][flags] Move up to object

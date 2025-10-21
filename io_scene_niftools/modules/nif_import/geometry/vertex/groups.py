@@ -106,16 +106,20 @@ class VertexGroup:
         """ Process all geometries in NIF tree to apply their skin """
         # get all geometries with skin
         n_geoms = [g for g in n_data.get_global_iterator() if isinstance(g, NifClasses.NiGeometry) and g.is_skin()]
+        NifLog.info(f"[SKIN IMPORT] Found {len(n_geoms)} skinned geometries in NIF")
 
         # make sure that each skin is applied only once to avoid distortions when a model is referred to twice
         for n_geom in set(n_geoms):
-            NifLog.info(f'Applying skin deformation on geometry {n_geom.name}')
+            NifLog.info(f'[SKIN IMPORT] Applying skin deformation on geometry {n_geom.name}')
             skininst = n_geom.skin_instance
             skindata = skininst.data
+            NifLog.info(f'[SKIN IMPORT]   Skeleton root: {skininst.skeleton_root.name if skininst.skeleton_root else "None"}')
+            NifLog.info(f'[SKIN IMPORT]   Number of bones: {len(skininst.bones)}')
             if skindata.has_vertex_weights:
+                NifLog.info(f'[SKIN IMPORT]   Using standard vertex weights deformation')
                 vertices = n_geom.get_skin_deformation()[0]
             else:
-                NifLog.info("PyFFI does not support this type of skinning, so here's a workaround...")
+                NifLog.info("[SKIN IMPORT]   PyFFI does not support this type of skinning, using partition workaround...")
                 vertices = VertexGroup.get_skin_deformation_from_partition(n_geom)
 
             # finally we can actually set the data
@@ -127,10 +131,60 @@ class VertexGroup:
     @classmethod
     def import_skin(cls, ni_block, b_obj):
         """Import a NiSkinInstance and its contents as vertex groups"""
+        NifLog.info(f"[SKIN IMPORT] ========== Importing Skin for '{ni_block.name}' ==========")
+        
+        # Log skin instance info
+        skin_inst = ni_block.skin_instance
+        skin_data = skin_inst.data
+        NifLog.info(f"[SKIN IMPORT] Skeleton root: '{skin_inst.skeleton_root.name if skin_inst.skeleton_root else 'None'}'")
+        NifLog.info(f"[SKIN IMPORT] Number of bones: {len(skin_inst.bones)}")
+        
+        # Log skin transform data
+        try:
+            skin_transform = skin_data.get_transform()
+            scale, rotation, translation = skin_transform.get_scale_rotation_translation()
+            NifLog.info(f"[SKIN IMPORT] Skin transform:")
+            NifLog.info(f"[SKIN IMPORT]   Translation: ({translation.x:.6f}, {translation.y:.6f}, {translation.z:.6f})")
+            NifLog.info(f"[SKIN IMPORT]   Scale: {scale:.6f}")
+        except Exception as e:
+            NifLog.warn(f"[SKIN IMPORT] Could not log skin transform: {e}")
+        
+        # Log bone data
+        for i, bone_data in enumerate(skin_data.bone_list):
+            bone_name = skin_inst.bones[i].name if i < len(skin_inst.bones) else 'Unknown'
+            NifLog.info(f"[SKIN IMPORT]   Bone {i} ('{bone_name}'): num_vertices={bone_data.num_vertices}")
+            
+            # Log bone transform
+            try:
+                bone_transform = bone_data.get_transform()
+                scale, rotation, translation = bone_transform.get_scale_rotation_translation()
+                NifLog.info(f"[SKIN IMPORT]     Transform:")
+                NifLog.info(f"[SKIN IMPORT]       Translation: ({translation.x:.6f}, {translation.y:.6f}, {translation.z:.6f})")
+                NifLog.info(f"[SKIN IMPORT]       Scale: {scale:.6f}")
+            except Exception as e:
+                NifLog.warn(f"[SKIN IMPORT]     Could not log bone transform: {e}")
+            
+            # Log bounding sphere (center and radius)
+            try:
+                bound = bone_data.bounding_sphere
+                NifLog.info(f"[SKIN IMPORT]     Bounding Sphere:")
+                NifLog.info(f"[SKIN IMPORT]       Center: ({bound.center.x:.6f}, {bound.center.y:.6f}, {bound.center.z:.6f})")
+                NifLog.info(f"[SKIN IMPORT]       Radius: {bound.radius:.6f}")
+            except Exception as e:
+                NifLog.warn(f"[SKIN IMPORT]     Could not log bounding sphere: {e}")
+        
+        # Log vertex weights
         bone_weights_map = cls.get_bone_weights(ni_block)
+        NifLog.info(f"[SKIN IMPORT] Found {len(bone_weights_map)} bones with weights")
+        for bone_name, weights in bone_weights_map.items():
+            NifLog.info(f"[SKIN IMPORT]   Bone '{bone_name}': {len(weights)} vertices weighted")
+        
         cls.set_bone_weights(bone_weights_map, b_obj)
         face_maps = cls.get_face_maps(ni_block)
+        if face_maps:
+            NifLog.info(f"[SKIN IMPORT] Found {len(face_maps)} face maps (body parts)")
         cls.set_face_maps(face_maps, b_obj)
+        NifLog.info(f"[SKIN IMPORT] ========== Skin Import Complete ==========")
 
     @staticmethod
     def get_bone_weights(ni_block):
@@ -190,8 +244,16 @@ class VertexGroup:
         else:
             skininst = ni_block.skin_instance
             if skininst:
+                NifLog.info(f"[SKIN IMPORT] Processing NiSkinInstance for '{ni_block.name}'")
+                NifLog.info(f"[SKIN IMPORT] Skeleton root: '{skininst.skeleton_root.name if skininst.skeleton_root else 'None'}'")
                 skindata = skininst.data
                 bones = skininst.bones
+                NifLog.info(f"[SKIN IMPORT] Number of bones: {len(bones)}")
+                NifLog.info(f"[SKIN IMPORT] Has vertex weights: {skindata.has_vertex_weights}")
+                
+                # Log skin transform
+                skin_transform = skindata.get_transform()
+                NifLog.info(f"[SKIN IMPORT] Skin transform (Matrix44): {type(skin_transform).__name__}")
                 if isinstance(skininst, NifClasses.BSSkinInstance):
                     bone_names = [None for _ in bones]
                     for idx, n_bone in enumerate(bones):
@@ -214,14 +276,17 @@ class VertexGroup:
 
                 # the usual case
                 elif skindata.has_vertex_weights:
+                    NifLog.info(f"[SKIN IMPORT] Processing standard vertex weights...")
                     bone_weights = skindata.bone_list
                     for idx, n_bone in enumerate(bones):
                         # skip empty bones (see pyffi issue #3114079)
                         if not n_bone:
+                            NifLog.warn(f"[SKIN IMPORT]   Bone index {idx}: Empty bone (None), skipping")
                             continue
 
                         vertex_weights = bone_weights[idx].vertex_weights
                         group_name = block_store.import_name(n_bone)
+                        NifLog.info(f"[SKIN IMPORT]   Bone index {idx}: '{group_name}' with {len(vertex_weights)} vertex weights")
                         if group_name not in bone_weights_map:
                             bone_weights_map[group_name] = []
     

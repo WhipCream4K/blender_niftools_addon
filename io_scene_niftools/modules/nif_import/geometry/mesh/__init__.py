@@ -162,7 +162,10 @@ class Mesh:
 
         # import skinning info, for meshes affected by bones
         if n_block.is_skin():
+            NifLog.info(f"[SKIN IMPORT] Mesh '{n_block.name}' has skin instance, importing...")
             VertexGroup.import_skin(n_block, b_obj)
+        else:
+            NifLog.info(f"[SKIN IMPORT] Mesh '{n_block.name}' has no skin instance")
 
         # import morph controller
         if NifOp.props.animation:

@@ -511,11 +511,14 @@ def update_skin_partition(self,
         skinpartblock.has_vertex_weights = True
         skinpartblock.reset_field("vertex_weights")
         for i, v in enumerate(vertices):
+            # Ensure exactly num_weights_per_vertex entries
+            vertex_weights_list = list(weights[v])  # [(bone_index, weight), ...]
+            # Pad with dummy entries if needed
+            while len(vertex_weights_list) < skinpartblock.num_weights_per_vertex:
+                vertex_weights_list.append((0, 0.0))
+            # Store weights
             for j in range(skinpartblock.num_weights_per_vertex):
-                if j < len(weights[v]):
-                    skinpartblock.vertex_weights[i][j] = weights[v][j][1]
-                else:
-                    skinpartblock.vertex_weights[i][j] = 0.0
+                skinpartblock.vertex_weights[i][j] = vertex_weights_list[j][1]
         if stripifyblock:
             skinpartblock.has_faces = True
             skinpartblock.reset_field("strip_lengths")
@@ -539,36 +542,60 @@ def update_skin_partition(self,
         skinpartblock.has_bone_indices = True
         skinpartblock.reset_field("bone_indices")
         for i, v in enumerate(vertices):
-            # the boneindices set keeps track of indices that have not been
-            # used yet
+            # Get vertex weights and ensure exactly num_weights_per_vertex entries
+            vertex_weights_list = list(weights[v])  # [(bone_index, weight), ...]
+            # Pad with dummy entries if needed
+            while len(vertex_weights_list) < skinpartblock.num_weights_per_vertex:
+                vertex_weights_list.append((0, 0.0))
+            
+            # the boneindices set keeps track of indices that have not been used yet
             boneindices = set(range(skinpartblock.num_bones))
-            for j in range(len(weights[v])):
-                skinpartblock.bone_indices[i][j] = bones.index(weights[v][j][0])
-                boneindices.remove(skinpartblock.bone_indices[i][j])
-            for j in range(len(weights[v]),skinpartblock.num_weights_per_vertex):
-                if padbones:
-                    # if padbones is True then we have enforced
-                    # num_bones == num_weights_per_vertex so this will not trigger
-                    # a KeyError
-                    skinpartblock.bone_indices[i][j] = boneindices.pop()
-                else:
+            
+            # Assign bone indices for all weights (including padded ones)
+            for j in range(skinpartblock.num_weights_per_vertex):
+                bone_num = vertex_weights_list[j][0]
+                try:
+                    bone_index = bones.index(bone_num)
+                    skinpartblock.bone_indices[i][j] = bone_index
+                    if bone_index in boneindices:
+                        boneindices.discard(bone_index)
+                except ValueError:
+                    # Bone not in this partition's bone list - use first bone
+                    logger.warn(f"Bone {bone_num} not in partition bones {bones}")
                     skinpartblock.bone_indices[i][j] = 0
 
-        # sort weights
+        # sort weights and ensure valid data
         for i, v in enumerate(vertices):
             vweights = []
             for j in range(skinpartblock.num_weights_per_vertex):
                 vweights.append([
                     skinpartblock.bone_indices[i][j],
                     skinpartblock.vertex_weights[i][j]])
+            
             if padbones:
                 # by bone index (for ffvt3r)
                 vweights.sort(key=lambda w: w[0])
             else:
                 # by weight (for fallout 3, largest weight first)
-                vweights.sort(key=lambda w: -w[1])
+                # Sort by weight descending, but keep zero-weights at the end
+                vweights.sort(key=lambda w: (-w[1], w[0]))
+            
+            # Write back sorted weights and ensure no NaN/invalid values
             for j in range(skinpartblock.num_weights_per_vertex):
-                skinpartblock.bone_indices[i][j] = vweights[j][0]
-                skinpartblock.vertex_weights[i][j] = vweights[j][1]
+                bone_idx = vweights[j][0]
+                weight = vweights[j][1]
+                
+                # Validate bone index
+                if bone_idx < 0 or bone_idx >= skinpartblock.num_bones:
+                    logger.warn(f"Invalid bone index {bone_idx} for partition with {skinpartblock.num_bones} bones")
+                    bone_idx = 0
+                
+                # Validate weight
+                if weight < 0 or weight > 1.0:
+                    logger.warn(f"Invalid weight {weight} for vertex {v}")
+                    weight = max(0.0, min(1.0, weight))
+                
+                skinpartblock.bone_indices[i][j] = bone_idx
+                skinpartblock.vertex_weights[i][j] = weight
 
     return lostweight
