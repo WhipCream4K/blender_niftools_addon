@@ -118,8 +118,15 @@ class Mesh:
             mesh_hasnormals = False
             if b_mat is not None:
                 mesh_hasnormals = True  # for proper lighting
+                NifLog.info(f"[NORMAL EXPORT] Material '{b_mat.name}' assigned - normals enabled by default")
                 if nif_scene.is_skyrim() and b_mat.niftools_shader.model_space_normals:
                     mesh_hasnormals = False  # for proper lighting
+                    NifLog.warn(f"[NORMAL EXPORT] Skyrim material '{b_mat.name}' has model_space_normals enabled - DISABLING normals")
+                else:
+                    NifLog.info(f"[NORMAL EXPORT] Skyrim check: is_skyrim={nif_scene.is_skyrim()}, model_space_normals={b_mat.niftools_shader.model_space_normals if nif_scene.is_skyrim() else 'N/A'}")
+            else:
+                NifLog.warn(f"[NORMAL EXPORT] No material assigned (using fake material) - normals DISABLED")
+                mesh_hasnormals = False
 
             # create a n_geom block
             if game in ("SKYRIM_SE",):
@@ -195,12 +202,25 @@ class Mesh:
                 if len(b_uv_layers) > 1:
                     raise NifError(f"{game} does not support multiple UV layers.")
 
+            NifLog.info(f"[NORMAL EXPORT] ========== Geometry Data Export for '{b_obj.name}' ==========")
+            NifLog.info(f"[NORMAL EXPORT] Material index: {b_mat_index}, Material: {b_mat.name if b_mat else 'None (fake)'}")
+            NifLog.info(f"[NORMAL EXPORT] Requesting normals: {mesh_hasnormals}")
+            NifLog.info(f"[NORMAL EXPORT] Has UV layers: {len(b_uv_layers) > 0}")
+            NifLog.info(f"[NORMAL EXPORT] Use tangents: {use_tangents}")
+            
             triangles, t_nif_to_blend, vertex_information, v_nif_to_blend = self.get_geom_data(b_mesh=eval_mesh,
                                                                              color=mesh_hasvcol,
                                                                              normal=mesh_hasnormals,
                                                                              uv=len(b_uv_layers) > 0,
                                                                              tangent=use_tangents,
                                                                              b_mat_index=b_mat_index)
+            
+            NifLog.info(f"[NORMAL EXPORT] Geometry data returned - checking vertex information...")
+            NifLog.info(f"[NORMAL EXPORT] Vertex information keys: {list(vertex_information.keys())}")
+            if 'NORMAL' in vertex_information:
+                NifLog.info(f"[NORMAL EXPORT] NORMALS PRESENT in vertex data: {len(vertex_information['NORMAL'])} normals")
+            else:
+                NifLog.warn(f"[NORMAL EXPORT] NO NORMALS in vertex data")
 
             if len(vertex_information['POSITION']) == 0:
                 continue  # m_4444x: skip 'empty' material indices
@@ -528,26 +548,81 @@ class Mesh:
 
         if normal:
             try:
+                NifLog.info(f"[NORMAL EXPORT] Computing normals for mesh '{b_mesh.name}'...")
                 # calculate normals
                 if hasattr(b_mesh, 'calc_normals_split'):
+                    NifLog.info(f"[NORMAL EXPORT] Using calc_normals_split() method")
                     b_mesh.calc_normals_split()
                 elif hasattr(b_mesh, 'calc_normals'):
                     # Blender 4.0+ removed calc_normals_split; calc_normals() populates normals for vertices/loops
+                    NifLog.info(f"[NORMAL EXPORT] Using calc_normals() method (Blender 4.0+)")
                     b_mesh.calc_normals()
                 else:
                     raise AttributeError("No normals calculation method available on mesh")
 
                 loop_normals = np.zeros((n_loops, 3), dtype=float)
                 b_mesh.loops.foreach_get('normal', loop_normals.reshape((-1, 1)))
+                NifLog.info(f"[NORMAL EXPORT] Retrieved {len(loop_normals)} loop normals")
+                
                 # smooth = vertex normal, non-smooth = face normal)
+                smooth_face_count = 0
+                flat_face_count = 0
                 for poly in b_mesh.polygons:
                     if not poly.use_smooth:
                         loop_normals[poly.loop_indices] = poly.normal
+                        flat_face_count += 1
+                    else:
+                        smooth_face_count += 1
+                NifLog.info(f"[NORMAL EXPORT] Face shading: {smooth_face_count} smooth, {flat_face_count} flat")
+                
                 loop_normals = loop_normals[matl_to_loop]
                 loop_hashes = np.concatenate((loop_hashes, loop_normals), axis=1)
+                NifLog.info(f"[NORMAL EXPORT] Normals successfully computed and added to vertex data")
+            except AttributeError as ex:
+                # If evaluated meshes in Blender 4.x don't expose calc_* APIs, try to use the original mesh
+                NifLog.warn(f"[NORMAL EXPORT] Evaluated mesh doesn't have normal calculation methods ({ex}). Trying original mesh...")
+                try:
+                    # Get the original (unevaluated) mesh from the object
+                    if hasattr(b_mesh, 'original'):
+                        orig_mesh = b_mesh.original
+                        NifLog.info(f"[NORMAL EXPORT] Using original mesh for normal calculation")
+                    else:
+                        # Fallback: try to get from the object's data
+                        NifLog.warn(f"[NORMAL EXPORT] Could not access original mesh, normals will be skipped")
+                        normal = False
+                        raise AttributeError("Cannot access original mesh")
+                    
+                    # Calculate normals on original mesh
+                    if hasattr(orig_mesh, 'calc_normals_split'):
+                        orig_mesh.calc_normals_split()
+                    elif hasattr(orig_mesh, 'calc_normals'):
+                        orig_mesh.calc_normals()
+                    
+                    # Now copy normals from original to evaluated mesh
+                    loop_normals = np.zeros((n_loops, 3), dtype=float)
+                    b_mesh.loops.foreach_get('normal', loop_normals.reshape((-1, 1)))
+                    NifLog.info(f"[NORMAL EXPORT] Retrieved {len(loop_normals)} loop normals from original mesh")
+                    
+                    # smooth = vertex normal, non-smooth = face normal)
+                    smooth_face_count = 0
+                    flat_face_count = 0
+                    for poly in b_mesh.polygons:
+                        if not poly.use_smooth:
+                            loop_normals[poly.loop_indices] = poly.normal
+                            flat_face_count += 1
+                        else:
+                            smooth_face_count += 1
+                    NifLog.info(f"[NORMAL EXPORT] Face shading: {smooth_face_count} smooth, {flat_face_count} flat")
+                    
+                    loop_normals = loop_normals[matl_to_loop]
+                    loop_hashes = np.concatenate((loop_hashes, loop_normals), axis=1)
+                    NifLog.info(f"[NORMAL EXPORT] Normals successfully computed from original mesh and added to vertex data")
+                except Exception as fallback_ex:
+                    NifLog.error(f"[NORMAL EXPORT] Fallback normal calculation also failed ({fallback_ex}). Exporting without normals.")
+                    normal = False
             except Exception as ex:
-                # If evaluated meshes in Blender 4.x don't expose calc_* APIs, skip normals gracefully
-                NifLog.warn(f"Normals could not be computed for '{b_mesh.name}' ({ex}). Exporting without normals.")
+                # Other exceptions
+                NifLog.error(f"[NORMAL EXPORT] Normals could not be computed for '{b_mesh.name}' ({ex}). Exporting without normals.")
                 normal = False
 
         if uv:
@@ -662,6 +737,13 @@ class Mesh:
         vertex_flags.tangents = 'TANGENT' in vertex_information
         vertex_flags.vertex_colors = 'COLOR' in vertex_information
         n_geom.vertex_desc.vertex_attributes = vertex_flags
+        
+        NifLog.info(f"[NORMAL EXPORT] BSTriShape '{n_geom.name}' vertex flags:")
+        NifLog.info(f"[NORMAL EXPORT]   Vertices: {vertex_flags.vertex}")
+        NifLog.info(f"[NORMAL EXPORT]   Normals: {vertex_flags.normals}")
+        NifLog.info(f"[NORMAL EXPORT]   UV: {vertex_flags.u_vs}")
+        NifLog.info(f"[NORMAL EXPORT]   Tangents: {vertex_flags.tangents}")
+        NifLog.info(f"[NORMAL EXPORT]   Vertex Colors: {vertex_flags.vertex_colors}")
         vert_size = 0
         if vertex_flags.vertex:
             vert_size += 3
@@ -690,8 +772,10 @@ class Mesh:
                 n_uv.u = b_uv[0][0]
                 n_uv.v = 1.0 - b_uv[0][1]
         if vertex_flags.normals:
+            NifLog.info(f"[NORMAL EXPORT] Setting normals on BSTriShape '{n_geom.name}': {len(vertex_information['NORMAL'])} normals")
             for n_n, b_n in zip([data.normal for data in n_geom.vertex_data], vertex_information['NORMAL']):
                 n_n.x, n_n.y, n_n.z = b_n
+            NifLog.info(f"[NORMAL EXPORT] Normals successfully set on BSTriShape vertex data")
         if vertex_flags.tangents:
             # B_tan: +d(B_u), B_bit: +d(B_v) and N_tan: +d(N_v), N_bit: +d(N_u)
             # moreover, N_v = 1 - B_v, so d(B_v) = - d(N_v), therefore N_tan = -B_bit and N_bit = B_tan
@@ -723,9 +807,13 @@ class Mesh:
         # normals
         n_geom.data.has_normals = 'NORMAL' in vertex_information
         if n_geom.data.has_normals:
+            NifLog.info(f"[NORMAL EXPORT] Setting normals on NiTriShape '{n_geom.name}': {len(vertex_information['NORMAL'])} normals")
             n_geom.data.reset_field("normals")
             for n_v, b_v in zip(n_geom.data.normals, vertex_information['NORMAL']):
                 n_v.x, n_v.y, n_v.z = b_v
+            NifLog.info(f"[NORMAL EXPORT] Normals successfully set on geometry data")
+        else:
+            NifLog.warn(f"[NORMAL EXPORT] No normals in vertex information for '{n_geom.name}'")
         # tangents
         if 'TANGENT' in vertex_information:
             tangents = vertex_information['TANGENT']
