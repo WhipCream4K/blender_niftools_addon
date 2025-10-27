@@ -10,9 +10,8 @@ for %%I in ("%DIR%\..") do set "ROOT=%%~fI"
 set "NAME=blender_niftools_addon"
 set /p VERSION=<%ROOT%\io_scene_niftools\VERSION.txt
 :: Abuse for loop to execute and store command output
-for /f %%i in ('git rev-parse --short HEAD') do set HASH=%%i
-for /f %%i in ('echo %date%') do set DATE=%%i
-set "ZIP_NAME=%NAME%-%VERSION%-%DATE%-%HASH%"
+for /f %%i in ('powershell -Command "Get-Date -Format dd-MM-yyyy-HHmm"') do set DATETIME=%%i
+set "ZIP_NAME=%NAME%-%VERSION%-%DATETIME%"
 set PYFFI_VERSION="2.2.4.dev3"
 set DEPS="io_scene_niftools\dependencies"
 set "GENERATED_FOLDER=%ROOT%\dependencies\nifgen"
