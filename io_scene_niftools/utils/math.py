@@ -189,12 +189,28 @@ def find_property(n_block, property_type):
     return None
 
 
+def _controller_has_data(ctrl):
+    """Check if a controller has associated data (handles both singular and plural interpolators)."""
+    if ctrl.data:
+        return True
+    # Check singular interpolator (most controllers)
+    if hasattr(ctrl, 'interpolator') and ctrl.interpolator:
+        return True
+    # Check plural interpolators array (e.g., NiGeomMorpherController)
+    if hasattr(ctrl, 'interpolators') and ctrl.interpolators:
+        return True
+    # Check interpolator_weights (e.g., newer NiGeomMorpherController)
+    if hasattr(ctrl, 'interpolator_weights') and ctrl.interpolator_weights:
+        return True
+    return False
+
+
 def find_controller(n_block, controller_type):
     """Find a controller."""
     ctrl = n_block.controller
     while ctrl:
         if isinstance(ctrl, controller_type):
-            if ctrl.data or ctrl.interpolator:
+            if _controller_has_data(ctrl):
                 return ctrl
         ctrl = ctrl.next_controller
 
@@ -204,7 +220,7 @@ def controllers_iter(n_block, controller_type):
     ctrl = n_block.controller
     while ctrl:
         if isinstance(ctrl, controller_type):
-            if ctrl.data or ctrl.interpolator:
+            if _controller_has_data(ctrl):
                 yield ctrl
         ctrl = ctrl.next_controller
 

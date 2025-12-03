@@ -57,9 +57,16 @@ class MorphAnimation(Animation):
     def import_morph_controller(self, n_node, b_obj):
         """Import NiGeomMorpherController as shape keys for blender object."""
 
+        # Debug: Log controller chain
+        NifLog.debug(f"Looking for NiGeomMorpherController on '{n_node.name}'")
+        ctrl = n_node.controller
+        while ctrl:
+            NifLog.debug(f"  Found controller: {type(ctrl).__name__}, has data: {bool(ctrl.data)}, has interpolator: {hasattr(ctrl, 'interpolator') and bool(ctrl.interpolator)}, has interpolators: {hasattr(ctrl, 'interpolators') and bool(ctrl.interpolators)}")
+            ctrl = ctrl.next_controller
+
         n_morph_ctrl = math.find_controller(n_node, NifClasses.NiGeomMorpherController)
         if n_morph_ctrl:
-            NifLog.debug("NiGeomMorpherController processed")
+            NifLog.info(f"NiGeomMorpherController found and being processed for '{n_node.name}'")
             b_mesh = b_obj.data
             morph_data = n_morph_ctrl.data
             if morph_data.num_morphs:
@@ -92,20 +99,52 @@ class MorphAnimation(Animation):
                     # find the keys
                     # older versions store keys in the morph_data
                     # newer versions store keys in the controller
+                    NifLog.info(f"  Morph {morph_i}: checking for keys in morph_data.morphs[{morph_i}].keys: {len(morph.keys) if morph.keys else 0} keys")
+
                     if not morph.keys:
+                        NifLog.info(f"  Morph {morph_i}: No keys in morph_data, checking interpolators...")
                         try:
                             if n_morph_ctrl.interpolators:
-                                morph = n_morph_ctrl.interpolators[morph_i].data.data
+                                NifLog.info(f"  Morph {morph_i}: Found {len(n_morph_ctrl.interpolators)} interpolators")
+                                interpolator = n_morph_ctrl.interpolators[morph_i]
+                                NifLog.info(f"  Morph {morph_i}: Interpolator type: {type(interpolator).__name__}, has data: {interpolator.data is not None if interpolator else False}")
+                                # Check if the interpolator has data (NiFloatData)
+                                if interpolator and interpolator.data:
+                                    morph = interpolator.data.data
+                                    NifLog.info(f"  Morph {morph_i}: Got KeyGroup from interpolator, num_keys: {morph.num_keys if hasattr(morph, 'num_keys') else 'N/A'}")
+                                else:
+                                    NifLog.info(f"  Morph {morph_i}: Interpolator has no keyframe data (static value only)")
+                                    continue
                             elif n_morph_ctrl.interpolator_weights:
-                                morph = n_morph_ctrl.interpolator_weights[morph_i].interpolator.data.data
-                        except KeyError:
-                            NifLog.info(f"Unsupported interpolator '{type(n_morph_ctrl.interpolator_weights[morph_i].interpolator)}'")
+                                NifLog.info(f"  Morph {morph_i}: Found {len(n_morph_ctrl.interpolator_weights)} interpolator_weights")
+                                interpolator = n_morph_ctrl.interpolator_weights[morph_i].interpolator
+                                NifLog.info(f"  Morph {morph_i}: Interpolator type: {type(interpolator).__name__}, has data: {interpolator.data is not None if interpolator else False}")
+                                # Check if the interpolator has data (NiFloatData)
+                                if interpolator and interpolator.data:
+                                    morph = interpolator.data.data
+                                    NifLog.info(f"  Morph {morph_i}: Got KeyGroup from interpolator, num_keys: {morph.num_keys if hasattr(morph, 'num_keys') else 'N/A'}")
+                                else:
+                                    NifLog.info(f"  Morph {morph_i}: Interpolator has no keyframe data (static value only)")
+                                    continue
+                            else:
+                                NifLog.info(f"  Morph {morph_i}: No interpolators or interpolator_weights found on controller")
+                                continue
+                        except (KeyError, AttributeError) as e:
+                            NifLog.info(f"  Morph {morph_i}: Could not get keyframe data: {e}")
                             continue
-                        
+
+                    # Check if we have keys to import
+                    if not morph.keys:
+                        NifLog.info(f"  Morph {morph_i}: No keys to import after all checks")
+                        continue
+
                     # get the interpolation mode
+                    NifLog.info(f"  Morph {morph_i}: Importing {len(morph.keys)} keys with interpolation {morph.interpolation}")
                     interp = self.get_b_interp_from_n_interp(morph.interpolation)
                     times, keys = self.get_keys_values(morph.keys)
+                    NifLog.info(f"  Morph {morph_i}: Times: {times}, Keys: {keys}")
                     self.add_keys(shape_action, "value", (0,), n_morph_ctrl.flags, times, keys, interp, key_name=shape_key.name)
+                    NifLog.info(f"  Morph {morph_i}: Keys added to action '{shape_action.name}' for shape key '{shape_key.name}'")
 
     def import_egm_morphs(self, b_obj):
         """Import all EGM morphs as shape keys for blender object."""
