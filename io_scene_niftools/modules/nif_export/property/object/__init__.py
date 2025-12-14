@@ -156,22 +156,48 @@ class ObjectProperty:
     def export_alpha_property(self, b_mat):
         """Return existing alpha property with given flags, or create new one
         if an alpha property with required flags is not found."""
-        # don't export an alpha property if mat is opaque in blender
-        if b_mat.blend_method == "OPAQUE":
-            return
-        if b_mat.niftools_alpha.alphaflag != 0:
-            # todo [material] reconstruct flag from material alpha settings
-            flags = b_mat.niftools_alpha.alphaflag
-            threshold = b_mat.alpha_threshold * 255
-        elif bpy.context.scene.niftools_scene.game == 'SID_MEIER_S_RAILROADS':
+
+        # 1. Transparency Check
+        if bpy.context.scene.niftools_scene.game == 'ZONE4':
+            # ZONE4 Strict Check: Only look at Texture Alpha Mode (User Request)
+            has_alpha_texture = False
+            if b_mat.use_nodes and b_mat.node_tree:
+                 for node in b_mat.node_tree.nodes:
+                     if isinstance(node, bpy.types.ShaderNodeTexImage):
+                         if node.image and getattr(node.image, 'alpha_mode', 'NONE') != 'NONE':
+                             has_alpha_texture = True
+                             break
+            if not has_alpha_texture:
+                return None
+
+        # 2. Determine Flags and Threshold
+        # Default to Standard (User Request: 88 threshold)
+        flags = 0x12ED
+        threshold = 88
+        
+        # Check for game-specific overrides
+        game = bpy.context.scene.niftools_scene.game
+        if game == 'SID_MEIER_S_RAILROADS':
             flags = 0x32ED
             threshold = 150
-        elif bpy.context.scene.niftools_scene.game == 'EMPIRE_EARTH_II':
+        elif game == 'EMPIRE_EARTH_II':
             flags = 0x00ED
             threshold = 0
         else:
-            flags = 0x12ED
-            threshold = 0
+             # Standard games (Skyrim, Oblivion, Fallout, etc)
+             if b_mat.niftools_alpha.alphaflag != 0:
+                 flags = b_mat.niftools_alpha.alphaflag
+                 
+                 # If the user hasn't manually tuned the threshold (still default ~0.5 / 127),
+                 # force it to our optimized 88.
+                 # Only use their threshold if they changed it significantly (e.g. 0 or 200).
+                 user_thresh = int(b_mat.alpha_threshold * 255)
+                 # Range around default 127/128 to catch defaults
+                 if 120 <= user_thresh <= 135: 
+                     threshold = 88
+                 else:
+                     threshold = user_thresh
+        
         return self.get_matching_block("NiAlphaProperty", flags=flags, threshold=int(threshold))
 
     def export_specular_property(self, b_mat, flags=0x0001):

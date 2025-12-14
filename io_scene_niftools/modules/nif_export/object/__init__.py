@@ -119,6 +119,30 @@ class Object:
         types.export_furniture_marker(self.n_root, filebase)
         return self.n_root
 
+    def _is_obj_transparent(self, b_obj):
+        """Check if object has transparent material."""
+        if b_obj.type != 'MESH' or not b_obj.data.materials:
+            return False
+            
+        for mat in b_obj.data.materials:
+            if not mat: continue
+                
+            # Check node tree for image texture with Alpha != NONE
+            if mat.use_nodes and mat.node_tree:
+                for node in mat.node_tree.nodes:
+                    if isinstance(node, bpy.types.ShaderNodeTexImage):
+                        if node.image and getattr(node.image, 'alpha_mode', 'NONE') != 'NONE':
+                             return True
+        return False
+
+    def _get_sorted_children(self, b_obj):
+        """Sort children: Opaque first, Transparent last."""
+        children = list(b_obj.children)
+        # sort key: False (0) for opaque, True (1) for transparent
+        # This puts opaque objects at the start of the list
+        children.sort(key=lambda child: self._is_obj_transparent(child))
+        return children
+
     def set_node_flags(self, b_obj, n_node):
         # default node flags
         game = bpy.context.scene.niftools_scene.game
@@ -203,7 +227,9 @@ class Object:
         elif b_obj.type == 'ARMATURE':
             self.armaturehelper.export_bones(b_obj, node)
             # special case: objects parented to armature bones
-            for b_child in b_obj.children:
+            # Sort children to ensure opaque meshes are exported (and rendered) before transparent ones
+            sorted_children = self._get_sorted_children(b_obj)
+            for b_child in sorted_children:
                 # find and attach to the right node
                 if b_child.parent_bone:
                     b_obj_bone = b_obj.data.bones[b_child.parent_bone]
@@ -216,7 +242,9 @@ class Object:
                     self.export_node(b_child, node)
         else:
             # export all children of this empty object as children of this node
-            for b_child in b_obj.children:
+            # Sort children to ensure opaque meshes are exported (and rendered) before transparent ones
+            sorted_children = self._get_sorted_children(b_obj)
+            for b_child in sorted_children:
                 self.export_node(b_child, node)
 
         return node

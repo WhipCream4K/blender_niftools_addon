@@ -103,9 +103,17 @@ class TextureWriter:
                     NifLog.warn("Embed Textures enabled but no readable DDS path was resolved; falling back to external reference.")
                     srctex.use_external = True
                 else:
-                    # Always convert the source to DXT1 DDS before embedding
+                    # Determine format based on alpha usage in material
+                    target_fourcc = 'DXT1'
+                    if TextureWriter._is_transparency_used(n_texture):
+                        target_fourcc = 'DXT5'
+                        NifLog.info(f"Transparency detected in '{getattr(n_texture, 'name', 'texture')}', using DXT5.")
+                    else:
+                        NifLog.info(f"No transparency detected in '{getattr(n_texture, 'name', 'texture')}', using DXT1.")
+
+                    # Convert to appropriate DXT format before embedding
                     abs_tex_path = bpy.path.abspath(tex_path)
-                    data, header = TextureWriter._convert_to_dxt1_with_texconv(abs_tex_path)
+                    data, header = TextureWriter._convert_with_texconv(abs_tex_path, desired_fourcc=target_fourcc)
                     pix = TextureWriter._build_nipixeldata_from_dds(data, header)
 
                     # Preserve filename/name; then attach pixel data
@@ -135,6 +143,16 @@ class TextureWriter:
                 srctex.name = n_texture.image.name
             elif getattr(srctex, 'file_name', None):
                 srctex.name = os.path.basename(srctex.file_name)
+
+        # Ensure file_name is present (User Request) even if embedding
+        if not getattr(srctex, 'file_name', None):
+            if getattr(srctex, 'name', None):
+                srctex.file_name = srctex.name
+            elif n_texture:
+                 try:
+                     srctex.file_name = TextureWriter.export_texture_filename(n_texture)
+                 except:
+                     pass
 
         # Log the texture name for debugging
         NifLog.info(f"Exporting texture with name: '{getattr(srctex, 'file_name', '<none>')}', external: {srctex.use_external}")
@@ -185,6 +203,8 @@ class TextureWriter:
             raise io_scene_niftools.utils.logging.NifError(f"Image type texture has no file loaded ('{b_texture_node.name}')")
 
         filename = b_texture_node.image.filepath
+        if not filename:
+             filename = b_texture_node.image.name
 
         # warn if packed flag is enabled
         if b_texture_node.image.packed_file:
@@ -218,6 +238,33 @@ class TextureWriter:
     # ------------------------------
     # Helpers for compact embed flow
     # ------------------------------
+    @staticmethod
+    def _is_transparency_used(n_texture):
+        """Detect if the alpha channel of the texture is used for transparency.
+        
+        Checks the Alpha setting on the Image Texture node:
+        - If Alpha is set to 'NONE', returns False (use DXT1)
+        - If Alpha is set to anything else ('STRAIGHT', 'PREMUL', 'CHANNEL_PACKED'), returns True (use DXT5)
+        
+        Returns True if transparency is detected, False otherwise.
+        """
+        if not n_texture or not isinstance(n_texture, bpy.types.ShaderNodeTexImage):
+            return False
+
+        # Check the image's alpha_mode setting
+        if n_texture.image is None:
+            return False
+        
+        # alpha_mode can be: 'NONE', 'STRAIGHT', 'PREMUL', 'CHANNEL_PACKED'
+        alpha_mode = getattr(n_texture.image, 'alpha_mode', 'NONE')
+        
+        if alpha_mode == 'NONE':
+            NifLog.debug(f"Texture '{n_texture.name}' has Alpha set to NONE, using DXT1.")
+            return False
+        else:
+            NifLog.debug(f"Texture '{n_texture.name}' has Alpha set to '{alpha_mode}', using DXT5.")
+            return True
+
     @staticmethod
     def _resolve_texture_path(n_texture, filename):
         """Resolve a usable source texture path (any format). Prefers DDS but will return
@@ -254,6 +301,17 @@ class TextureWriter:
                 uniq.append(c)
                 seen.add(c)
         for c in uniq:
+            # remove blender numeric suffix if present (e.g. .001)
+            import re
+            c_base = os.path.basename(c)
+            # Match pattern: name + optional extension + .001, .002 etc
+            # We want to strip the .XXX suffix but keep the extension
+            if re.search(r'\.\d{3}$', c):
+                # Check if it has an extension before the suffix
+                root, suffix = os.path.splitext(c)
+                if suffix and re.match(r'^\.\d{3}$', suffix):
+                   candidates.append(root)
+
             NifLog.debug(f"Embed resolve candidate: '{c}' -> '{bpy.path.abspath(c)}'")
         # 1) Prefer existing DDS
         for c in uniq:
@@ -296,8 +354,8 @@ class TextureWriter:
             else:
                 raise ValueError(f'Only BC1/BC2/BC3 embedding supported (DXGI format {dxgi_format})')
         if not fourcc:
-            NifLog.info("Empty fourcc detected, assuming DXT1 format")
-            fourcc = 'DXT1'
+            NifLog.info("Empty fourcc detected, returning None")
+            fourcc = None
         return {
             'width': dwWidth,
             'height': dwHeight,
@@ -308,7 +366,7 @@ class TextureWriter:
         }
 
     @staticmethod
-    def _convert_to_dxt1_with_texconv(src_path, desired_fourcc='DXT1'):
+    def _convert_with_texconv(src_path, desired_fourcc='DXT1'):
         import tempfile, subprocess
         src = bpy.path.abspath(src_path)
         # Resolve texconv path
@@ -348,6 +406,10 @@ class TextureWriter:
         # Some texconv builds may leave pfFourCC empty; trust requested format
         if not header['fourcc']:
             header['fourcc'] = desired_fourcc
+        
+        # If header has fourcc but it differs from desired, we trust the header unless it was empty
+        # but warn if mismatch? Actually texconv should have produced the desired format.
+        
         if header['fourcc'] not in ('DXT1', 'DXT3', 'DXT5'):
             raise ValueError(f"Auto-convert produced unsupported format '{header['fourcc']}'")
         NifLog.info(f"Convert succeeded. New DDS fourcc='{header['fourcc']}', size={header['width']}x{header['height']}")

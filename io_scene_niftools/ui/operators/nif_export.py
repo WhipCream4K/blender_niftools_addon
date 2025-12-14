@@ -144,7 +144,6 @@ class OperatorExportOptimisePanel(OperatorSetting, Panel):
         layout.prop(operator, "stitch_strips")
         layout.prop(operator, "force_dds")
         layout.prop(operator, "embed_textures")
-        layout.prop(operator, "auto_convert_to_dxt1")
         layout.prop(operator, "optimise_materials")
         layout.prop(operator, "sep_tangent_space")
 

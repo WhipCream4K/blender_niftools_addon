@@ -135,12 +135,6 @@ class NifExportOperator(Operator, ExportHelper, CommonDevOperator, CommonNif, Co
         description="If enabled, only embed the top-level (largest) mip. Disable to embed all mipmaps from the source DDS.",
         default=True)
 
-    # Auto-convert to DXT1 if the source texture is not BC1/2/3
-    auto_convert_to_dxt1: bpy.props.BoolProperty(
-        name="Auto-convert to DXT1 on embed",
-        description="If enabled and the source is not DXT1/3/5, attempt to run texconv to convert to DXT1 before embedding.",
-        default=False)
-
 
     # Whether or not to remove duplicate materials
     optimise_materials: bpy.props.BoolProperty(
