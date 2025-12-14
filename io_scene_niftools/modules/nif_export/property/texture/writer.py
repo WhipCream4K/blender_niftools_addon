@@ -85,14 +85,19 @@ class TextureWriter:
             NifLog.warn("Exporting source texture without texture or filename (bug?).")
             
         # (name normalization deferred until after embed/external handling)
-        # fill in default values (TODO: can we use 6 for everything?)
+        # Set FormatPrefs - these are nested inside format_prefs struct
+        # Use LAY_DEFAULT (6) for modern NIF versions (>= 10.0.1.0)
+        # Fallback to LAY_PALETTIZED_4 (5) for legacy versions
+        # else if the scene game is ZONE4 also use pixel layout 6
         if bpy.context.scene.niftools_scene.nif_version >= 0x0A000100:
-            srctex.pixel_layout = 6
+            srctex.format_prefs.pixel_layout = 6
+        elif bpy.context.scene.niftools_scene.game == 'ZONE4':
+            srctex.format_prefs.pixel_layout = 6
         else:
-            srctex.pixel_layout = 5
-        srctex.use_mipmaps = 1
-        srctex.alpha_format = 3
-        srctex.unknown_byte = 1
+            srctex.format_prefs.pixel_layout = 5
+        srctex.format_prefs.use_mipmaps = 1
+        srctex.format_prefs.alpha_format = 3
+        srctex.is_static = 1
 
         # if embedding requested, delegate to compact helpers that wrap texconv and DDS parsing
         if embed:

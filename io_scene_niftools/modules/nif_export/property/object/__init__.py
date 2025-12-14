@@ -169,6 +169,12 @@ class ObjectProperty:
                              break
             if not has_alpha_texture:
                 return None
+        else:
+            # Standard Check: Look at Blender Material Blend Mode
+            blend_method = getattr(b_mat, 'blend_method', 'OPAQUE')
+            render_method = getattr(b_mat, 'surface_render_method', 'OPAQUE')
+            if blend_method == 'OPAQUE' and render_method == 'OPAQUE':
+                return None
 
         # 2. Determine Flags and Threshold
         # Default to Standard (User Request: 88 threshold)
