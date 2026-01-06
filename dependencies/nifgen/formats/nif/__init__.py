@@ -157,6 +157,10 @@ class NifFile(Header):
 		self.blocks = []
 		self.modification = None
 
+	@property
+	def header(self):
+		return self
+
 	@staticmethod
 	def inspect_version_only(stream):
 		pos = stream.tell()
@@ -176,9 +180,9 @@ class NifFile(Header):
 				modification = "laxelore"
 			# neosteam and ndoors have a special version integer
 			elif (not modification) or modification == "jmihs1":
-				 if ver_int != h_ver:
-					 raise ValueError(f"Corrupted NIF file: header version string in {header_string} does not "
-					   f"correspond with header version field {ver_int}")
+				if ver_int != h_ver:
+					raise ValueError(f"Corrupted NIF file: header version string in {header_string} does not "
+					f"correspond with header version field {ver_int}")
 			elif modification == "neosteam":
 				if ver_int != 0x08F35232:
 					raise ValueError("Corrupted NIF file: invalid NeoSteam version.")
@@ -345,6 +349,15 @@ class NifFile(Header):
 	# GlobalNode
 	def get_global_child_nodes(self, edge_filter=()):
 		return (root for root in self.roots)
+
+	def get_global_iterator(self, edge_filter=()):
+		yield self
+		for child in self.get_global_child_nodes(edge_filter=edge_filter):
+			if hasattr(child, "get_global_iterator"):
+				for branch in child.get_global_iterator(edge_filter=edge_filter):
+					yield branch
+			else:
+				yield child
 
 	@staticmethod
 	def update_globals(instance):

@@ -195,6 +195,10 @@ class TransformAnimation(Animation):
             # bone isn't keyframed in this action, nothing to do here
             return
 
+        if not exp_fcurves:
+            NifLog.info(f"[ANIM EXPORT] no transform fcurves for target='{target_name}', skipping controller")
+            return
+
         # decompose the bind matrix
         bind_scale, bind_rot, bind_trans = math.decompose_srt(bind_matrix)
         n_kfc, n_kfi = self.create_controller(parent_block, target_name, priority)

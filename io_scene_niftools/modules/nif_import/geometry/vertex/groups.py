@@ -44,6 +44,7 @@ from nifgen.formats.nif import classes as NifClasses
 from nifgen.formats.nif.nimesh.structs.DisplayList import DisplayList
 
 from io_scene_niftools.modules.nif_import.object.block_registry import block_store, get_bone_name_for_blender
+from io_scene_niftools.utils import math as nif_math
 from io_scene_niftools.utils.logging import NifLog
 
 
@@ -105,7 +106,11 @@ class VertexGroup:
     def apply_skin_deformation(n_data):
         """ Process all geometries in NIF tree to apply their skin """
         # get all geometries with skin
-        n_geoms = [g for g in n_data.get_global_iterator() if isinstance(g, NifClasses.NiGeometry) and g.is_skin()]
+        if getattr(n_data, "blocks", None):
+            n_iter = n_data.blocks
+        else:
+            n_iter = chain.from_iterable(root.tree() for root in n_data.roots)
+        n_geoms = [g for g in n_iter if isinstance(g, NifClasses.NiGeometry) and g.is_skin()]
         NifLog.info(f"[SKIN IMPORT] Found {len(n_geoms)} skinned geometries in NIF")
 
         # make sure that each skin is applied only once to avoid distortions when a model is referred to twice
