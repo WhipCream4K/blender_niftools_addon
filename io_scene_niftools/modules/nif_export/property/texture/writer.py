@@ -54,7 +54,9 @@ from io_scene_niftools.utils.singleton import NifData
 
 class TextureWriter:
     _embed_cache = {}
+    # Maps a computed source-key to the already-built NiSourceTexture block.
     _source_texture_key_map = {}
+    # Reverse map to recover the key for a block (debugging/consistency).
     _source_texture_block_key = {}
 
     @staticmethod
@@ -65,6 +67,8 @@ class TextureWriter:
 
     @staticmethod
     def _build_source_texture_key(srctex, source_path=None, target_fourcc=None):
+        # Build a stable tuple that describes the exported texture so identical
+        # sources reuse the same NiSourceTexture block.
         fmt = getattr(srctex, "format_prefs", None)
         pixel_layout = getattr(fmt, "pixel_layout", None)
         use_mipmaps = getattr(fmt, "use_mipmaps", None)
@@ -80,6 +84,7 @@ class TextureWriter:
 
     @staticmethod
     def _register_source_texture_key(block, key):
+        # Store both directions so we can dedupe by key and introspect later.
         TextureWriter._source_texture_key_map[key] = block
         TextureWriter._source_texture_block_key[block] = key
 
@@ -155,6 +160,7 @@ class TextureWriter:
                 NifLog.warn(f"Failed to resolve texture path for embedding: {ex}. Falling back to external reference.")
                 srctex.use_external = True
 
+        # Simple lookup: compute a key and reuse an existing block if present.
         source_key = TextureWriter._build_source_texture_key(srctex, source_path=source_path, target_fourcc=target_fourcc)
         existing = TextureWriter._source_texture_key_map.get(source_key)
         if existing:
@@ -197,6 +203,7 @@ class TextureWriter:
             except Exception as ex:
                 NifLog.warn(f"Failed to embed texture as NiPixelData: {ex}. Falling back to external reference.")
                 srctex.use_external = True
+                # Rebuild key for external export and reuse if already created.
                 source_key = TextureWriter._build_source_texture_key(srctex)
                 existing = TextureWriter._source_texture_key_map.get(source_key)
                 if existing:
