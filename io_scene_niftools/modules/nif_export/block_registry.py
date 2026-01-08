@@ -57,6 +57,7 @@ class ExportBlockRegistry:
 
     def __init__(self):
         self._block_to_obj = {}
+        self._hash_cache = {}
 
     @property
     def block_to_obj(self): 
@@ -65,6 +66,7 @@ class ExportBlockRegistry:
     @block_to_obj.setter
     def block_to_obj(self, value):
         self._block_to_obj = value
+        self._hash_cache = {}
 
     def register_block(self, block, b_obj=None):
         """Helper function to register a newly created block in the list of
@@ -77,6 +79,7 @@ class ExportBlockRegistry:
             NifLog.info(f"Exporting {block.__class__.__name__} block")
         else:
             NifLog.info(f"Exporting {b_obj} as {block.__class__.__name__} block")
+        self.invalidate_hash(block)
         self._block_to_obj[block] = b_obj
         return block
 
@@ -93,6 +96,20 @@ class ExportBlockRegistry:
         except AttributeError:
             raise io_scene_niftools.utils.logging.NifError(f"'{block_type}': Unknown block type (this is probably a bug).")
         return self.register_block(block, b_obj)
+
+    def clear_hash_cache(self):
+        self._hash_cache = {}
+
+    def invalidate_hash(self, block):
+        self._hash_cache.pop(block, None)
+
+    def get_hash_cached(self, block):
+        cached = self._hash_cache.get(block)
+        if cached is not None:
+            return cached
+        hsh = block.get_hash()
+        self._hash_cache[block] = hsh
+        return hsh
 
     @staticmethod
     def get_bone_name_for_nif(name):

@@ -225,8 +225,16 @@ class Mesh:
             if len(vertex_information['POSITION']) == 0:
                 continue  # m_4444x: skip 'empty' material indices
             if len(vertex_information['POSITION']) > 65535:
+                NifLog.error(
+                    f"[NORMAL EXPORT] Vertex limit exceeded for mesh '{b_obj.name}': "
+                    f"{len(vertex_information['POSITION'])} vertices (max 65535)"
+                )
                 raise NifError("Too many vertices. Decimate your mesh and try again.")
             if len(triangles) > 65535:
+                NifLog.error(
+                    f"[NORMAL EXPORT] Triangle limit exceeded for mesh '{b_obj.name}': "
+                    f"{len(triangles)} triangles (max 65535)"
+                )
                 raise NifError("Too many polygons. Decimate your mesh and try again.")
 
             vertex_map = [None for _ in range(len(eval_mesh.vertices))]

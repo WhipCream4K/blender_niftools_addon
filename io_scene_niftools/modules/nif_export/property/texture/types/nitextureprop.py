@@ -36,6 +36,9 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 # ***** END LICENSE BLOCK *****
+import os
+import time
+
 import bpy
 from nifgen.formats.nif import classes as NifClasses
 
@@ -43,6 +46,27 @@ from io_scene_niftools.modules.nif_export.block_registry import block_store
 from io_scene_niftools.modules.nif_export.property.texture import TextureSlotManager, TextureWriter
 from io_scene_niftools.utils.logging import NifLog
 from io_scene_niftools.utils.singleton import NifData
+
+
+def _get_addon_preferences():
+    addon_name = __package__.split(".")[0] if __package__ else "io_scene_niftools"
+    prefs = None
+    if hasattr(bpy.context, "preferences"):
+        addon = bpy.context.preferences.addons.get(addon_name)
+        if addon:
+            prefs = addon.preferences
+    elif hasattr(bpy.context, "user_preferences"):
+        addon = bpy.context.user_preferences.addons.get(addon_name)
+        if addon:
+            prefs = addon.preferences
+    return prefs
+
+
+def _timing_enabled():
+    if os.environ.get("NIFTOOLS_EXPORT_TIMINGS") == "1":
+        return True
+    prefs = _get_addon_preferences()
+    return bool(prefs and getattr(prefs, "export_profile_enable", False))
 
 
 class NiTextureProp(TextureSlotManager):
@@ -64,6 +88,7 @@ class NiTextureProp(TextureSlotManager):
     }
 
     __instance = None
+    _texturing_prop_key_map = {}
 
     def __init__(self):
         """ Virtually private constructor. """
@@ -80,8 +105,30 @@ class NiTextureProp(TextureSlotManager):
             NiTextureProp()
         return NiTextureProp.__instance
 
+    @classmethod
+    def clear_dedupe_cache(cls):
+        cls._texturing_prop_key_map = {}
+
+    def _build_texturing_prop_key(self, texprop):
+        slots = []
+        for slot_name, b_texture_node in self.slots.items():
+            if not b_texture_node:
+                continue
+            field_name = f"{slot_name.lower().replace(' ', '_')}_texture"
+            if not getattr(texprop, "has_" + field_name, False):
+                continue
+            texdesc = getattr(texprop, field_name)
+            source_key = TextureWriter.get_source_texture_key_for_block(texdesc.source)
+            if source_key is None and texdesc.source:
+                source_key = ("external", getattr(texdesc.source, "file_name", None))
+            slots.append((slot_name, texdesc.uv_set, source_key))
+        slots.sort(key=lambda item: item[0])
+        return (texprop.flags, texprop.apply_mode, texprop.texture_count, tuple(slots))
+
     def export_texturing_property(self, flags=0x0001, applymode=None, b_mat=None):
         """Export texturing property."""
+        timing_enabled = _timing_enabled()
+        start_time = time.perf_counter() if timing_enabled else None
 
         self.determine_texture_types(b_mat)
 
@@ -94,13 +141,20 @@ class NiTextureProp(TextureSlotManager):
         self.export_texture_shader_effect(texprop)
         self.export_nitextureprop_tex_descs(texprop)
 
-        # search for duplicate
-        for n_block in block_store.block_to_obj:
-            if isinstance(n_block, NifClasses.NiTexturingProperty) and n_block.get_hash() == texprop.get_hash():
-                return n_block
+        key = self._build_texturing_prop_key(texprop)
+        existing = NiTextureProp._texturing_prop_key_map.get(key)
+        if existing:
+            if timing_enabled:
+                elapsed = time.perf_counter() - start_time
+                NifLog.info(f"[TIMING] export_texturing_property reused in {elapsed:.3f}s")
+            return existing
 
         # no texturing property with given settings found, so use and register
         # the new one
+        NiTextureProp._texturing_prop_key_map[key] = texprop
+        if timing_enabled:
+            elapsed = time.perf_counter() - start_time
+            NifLog.info(f"[TIMING] export_texturing_property created in {elapsed:.3f}s")
         return texprop
 
     def export_nitextureprop_tex_descs(self, texprop):

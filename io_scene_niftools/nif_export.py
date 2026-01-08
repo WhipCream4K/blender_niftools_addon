@@ -38,7 +38,12 @@
 # ***** END LICENSE BLOCK *****
 
 
+import os
 import os.path
+import cProfile
+import io
+import pstats
+import time
 
 import bpy
 from nifgen.formats.nif import classes as NifClasses
@@ -49,6 +54,7 @@ from io_scene_niftools.modules.nif_export.block_registry import block_store
 from io_scene_niftools.modules.nif_export.object import Object
 from io_scene_niftools.modules.nif_export import scene
 from io_scene_niftools.modules.nif_export.property.object import ObjectProperty
+from io_scene_niftools.modules.nif_export.property.texture.writer import TextureWriter
 from io_scene_niftools.nif_common import NifCommon
 from io_scene_niftools.utils import math, consts
 from io_scene_niftools.utils.singleton import NifOp, EGMData, NifData
@@ -74,6 +80,69 @@ class NifExport(NifCommon):
 
     def execute(self):
         """Main export function."""
+        profile_enabled, profile_path = self._get_profile_settings()
+        if profile_enabled:
+            return self._execute_with_profile(profile_path)
+        return self._execute_impl()
+
+    def _get_profile_settings(self):
+        profile_enabled = os.environ.get("NIFTOOLS_PROFILE_EXPORT") == "1"
+        profile_path = os.environ.get("NIFTOOLS_PROFILE_EXPORT_PATH")
+
+        prefs = self._get_addon_preferences()
+        if prefs and getattr(prefs, "export_profile_enable", False):
+            profile_enabled = True
+            prefs_path = getattr(prefs, "export_profile_path", "")
+            if prefs_path:
+                profile_path = bpy.path.abspath(prefs_path)
+
+        return profile_enabled, profile_path
+
+    def _get_addon_preferences(self):
+        prefs = None
+        if hasattr(bpy.context, "preferences"):
+            addon = bpy.context.preferences.addons.get(__package__)
+            if addon:
+                prefs = addon.preferences
+        elif hasattr(bpy.context, "user_preferences"):
+            addon = bpy.context.user_preferences.addons.get(__package__)
+            if addon:
+                prefs = addon.preferences
+        return prefs
+
+    def _execute_with_profile(self, profile_path):
+        profiler = cProfile.Profile()
+        profiler.enable()
+        try:
+            return self._execute_impl()
+        finally:
+            profiler.disable()
+            if profile_path:
+                resolved_path = self._resolve_profile_path(profile_path)
+                profiler.dump_stats(resolved_path)
+                NifLog.info(f"Export profiling data written to {resolved_path}")
+            else:
+                stream = io.StringIO()
+                stats = pstats.Stats(profiler, stream=stream).sort_stats("cumulative")
+                stats.print_stats(50)
+                NifLog.info("Export profiling (top 50 by cumulative time):")
+                for line in stream.getvalue().splitlines():
+                    NifLog.info(line)
+
+    def _resolve_profile_path(self, profile_path):
+        path = bpy.path.abspath(profile_path)
+        if path.endswith(os.sep) or os.path.isdir(path) or not os.path.splitext(path)[1]:
+            os.makedirs(path, exist_ok=True)
+            filename = f"nif_export_{int(time.time())}.prof"
+            return os.path.join(path, filename)
+
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        return path
+
+    def _execute_impl(self):
+        """Main export function."""
         if bpy.context.mode != 'OBJECT':
             bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 
@@ -84,6 +153,9 @@ class NifExport(NifCommon):
         filebase, fileext = os.path.splitext(os.path.basename(NifOp.props.filepath))
 
         block_store.block_to_obj = {}  # clear out previous iteration
+        TextureWriter.clear_embed_cache()
+        from io_scene_niftools.modules.nif_export.property.texture.types.nitextureprop import NiTextureProp
+        NiTextureProp.clear_dedupe_cache()
 
         try:  # catch export errors
 

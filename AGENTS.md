@@ -7,12 +7,8 @@
 - Release history and user-facing changes are tracked in `CHANGELOG.rst`.
 - Build, install, and distribution helpers live in `install/`, `bin/`, `dist_obfuscated/`, and `dependencies/`.
 
-## Source of truth
-When answering questions, use only information from this repository.
-If a question cannot be answered from this repository, say so and ask for a specific file or pointer.
-
 ## How to answer questions
-- Gather evidence from project files only; do not rely on external knowledge.
+- Gather evidence from project files first; rely on blender 4.5's documentation or online niftools documentation only when necessary.
 - Explain conclusions by citing the most relevant file paths.
 - Provide the correct reference point for each claim (file path, and line/section when helpful).
 - Prefer primary sources: `io_scene_niftools/` for behavior, `docs/` for docs, and `CHANGELOG.rst` for history.
@@ -23,3 +19,10 @@ If a question cannot be answered from this repository, say so and ask for a spec
 - Docs root: `docs/index.rst`
 - Contribution rules: `CONTRIBUTING.rst`
 - Release notes: `CHANGELOG.rst`
+
+## Main functionality: import/export entry points
+- NIF import main file: `io_scene_niftools/nif_import.py` (`NifImport.execute` loads NIFs via `NifFile.load_nif`, sets helpers, and walks root blocks through `import_root`/`import_branch` using `io_scene_niftools/modules/nif_import/` helpers).
+- NIF export main file: `io_scene_niftools/nif_export.py` (`NifExport.execute` gathers exportable objects, builds the root block via `Object.export_root_node`, applies post-processing, then writes the NIF/EGM output).
+- KF import main file: `io_scene_niftools/kf_import.py` (`KfImport.execute` loads .kf files via `NifFile.load_nif`, sets FPS, and imports keyframes via `TransformAnimation.import_kf_root`).
+- KF export main file: `io_scene_niftools/kf_export.py` (`KfExport.execute` builds the keyframe tree with `TransformAnimation.export_kf_root` and writes the .kf output).
+- Operators wiring: `io_scene_niftools/operators/nif_import_op.py`, `io_scene_niftools/operators/nif_export_op.py`, `io_scene_niftools/operators/kf_import_op.py`, and `io_scene_niftools/operators/kf_export_op.py` instantiate the corresponding classes and call `execute` from the Blender UI.

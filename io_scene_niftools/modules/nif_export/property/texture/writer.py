@@ -53,6 +53,39 @@ from io_scene_niftools.utils.singleton import NifData
 
 
 class TextureWriter:
+    _embed_cache = {}
+    _source_texture_key_map = {}
+    _source_texture_block_key = {}
+
+    @staticmethod
+    def clear_embed_cache():
+        TextureWriter._embed_cache = {}
+        TextureWriter._source_texture_key_map = {}
+        TextureWriter._source_texture_block_key = {}
+
+    @staticmethod
+    def _build_source_texture_key(srctex, source_path=None, target_fourcc=None):
+        fmt = getattr(srctex, "format_prefs", None)
+        pixel_layout = getattr(fmt, "pixel_layout", None)
+        use_mipmaps = getattr(fmt, "use_mipmaps", None)
+        alpha_format = getattr(fmt, "alpha_format", None)
+        is_static = getattr(srctex, "is_static", None)
+        file_name = getattr(srctex, "file_name", None)
+        use_external = bool(getattr(srctex, "use_external", False))
+        if use_external:
+            return ("external", file_name, pixel_layout, use_mipmaps, alpha_format, is_static)
+        embed_only_base = getattr(NifOp.props, "embed_only_base_mipmap", True)
+        source_key = source_path or file_name
+        return ("embed", source_key, file_name, target_fourcc, embed_only_base, pixel_layout, use_mipmaps, alpha_format, is_static)
+
+    @staticmethod
+    def _register_source_texture_key(block, key):
+        TextureWriter._source_texture_key_map[key] = block
+        TextureWriter._source_texture_block_key[block] = key
+
+    @staticmethod
+    def get_source_texture_key_for_block(block):
+        return TextureWriter._source_texture_block_key.get(block)
 
     @staticmethod
     def export_source_texture(n_texture=None, filename=None):
@@ -99,6 +132,8 @@ class TextureWriter:
         srctex.format_prefs.alpha_format = 3
         srctex.is_static = 1
 
+        source_path = None
+        target_fourcc = None
         # if embedding requested, delegate to compact helpers that wrap texconv and DDS parsing
         if embed:
             try:
@@ -108,6 +143,7 @@ class TextureWriter:
                     NifLog.warn("Embed Textures enabled but no readable DDS path was resolved; falling back to external reference.")
                     srctex.use_external = True
                 else:
+                    source_path = bpy.path.abspath(tex_path)
                     # Determine format based on alpha usage in material
                     target_fourcc = 'DXT1'
                     if TextureWriter._is_transparency_used(n_texture):
@@ -115,32 +151,59 @@ class TextureWriter:
                         NifLog.info(f"Transparency detected in '{getattr(n_texture, 'name', 'texture')}', using DXT5.")
                     else:
                         NifLog.info(f"No transparency detected in '{getattr(n_texture, 'name', 'texture')}', using DXT1.")
+            except Exception as ex:
+                NifLog.warn(f"Failed to resolve texture path for embedding: {ex}. Falling back to external reference.")
+                srctex.use_external = True
 
-                    # Convert to appropriate DXT format before embedding
-                    abs_tex_path = bpy.path.abspath(tex_path)
-                    data, header = TextureWriter._convert_with_texconv(abs_tex_path, desired_fourcc=target_fourcc)
-                    pix = TextureWriter._build_nipixeldata_from_dds(data, header)
+        source_key = TextureWriter._build_source_texture_key(srctex, source_path=source_path, target_fourcc=target_fourcc)
+        existing = TextureWriter._source_texture_key_map.get(source_key)
+        if existing:
+            if not getattr(existing, 'file_name', None) and getattr(srctex, 'file_name', None):
+                existing.file_name = srctex.file_name
+                NifLog.debug(f"Updated duplicate block's file_name to: '{existing.file_name}'")
+            if hasattr(existing, 'name'):
+                if not getattr(existing, 'name', None) and getattr(srctex, 'name', None):
+                    existing.name = srctex.name
+                    NifLog.debug(f"Updated duplicate block's name to: '{existing.name}'")
+                elif not getattr(existing, 'name', None) and getattr(existing, 'file_name', None):
+                    existing.name = os.path.basename(existing.file_name)
+                    NifLog.debug(f"Set duplicate block's name from filename: '{existing.name}'")
+            block_store.invalidate_hash(existing)
+            return existing
 
-                    # Preserve filename/name; then attach pixel data
-                    original_filename = getattr(srctex, 'file_name', '')
-                    original_name = getattr(srctex, 'name', '')
-                    try:
-                        srctex.pixel_data = pix
-                    except Exception:
-                        srctex.data = pix
+        if embed and not srctex.use_external and source_path and target_fourcc:
+            try:
+                # Convert to appropriate DXT format before embedding
+                data, header = TextureWriter._convert_with_texconv_cached(source_path, desired_fourcc=target_fourcc)
+                pix = TextureWriter._build_nipixeldata_from_dds(data, header)
 
-                    if original_filename and not getattr(srctex, 'file_name', None):
-                        srctex.file_name = original_filename
-                    if hasattr(srctex, 'name'):
-                        if original_name:
-                            srctex.name = original_name
-                        elif getattr(srctex, 'file_name', None):
-                            srctex.name = os.path.basename(srctex.file_name)
-                        else:
-                            srctex.name = os.path.basename(tex_path)
+                # Preserve filename/name; then attach pixel data
+                original_filename = getattr(srctex, 'file_name', '')
+                original_name = getattr(srctex, 'name', '')
+                try:
+                    srctex.pixel_data = pix
+                except Exception:
+                    srctex.data = pix
+
+                if original_filename and not getattr(srctex, 'file_name', None):
+                    srctex.file_name = original_filename
+                if hasattr(srctex, 'name'):
+                    if original_name:
+                        srctex.name = original_name
+                    elif getattr(srctex, 'file_name', None):
+                        srctex.name = os.path.basename(srctex.file_name)
+                    else:
+                        srctex.name = os.path.basename(source_path)
             except Exception as ex:
                 NifLog.warn(f"Failed to embed texture as NiPixelData: {ex}. Falling back to external reference.")
                 srctex.use_external = True
+                source_key = TextureWriter._build_source_texture_key(srctex)
+                existing = TextureWriter._source_texture_key_map.get(source_key)
+                if existing:
+                    block_store.invalidate_hash(existing)
+                    return existing
+        elif embed and not srctex.use_external:
+            NifLog.warn("Embed Textures enabled but no valid source texture resolved; exporting as external reference.")
 
         # Normalize name once, after embed/external decisions
         if hasattr(srctex, 'name') and not getattr(srctex, 'name', None):
@@ -163,27 +226,10 @@ class TextureWriter:
         NifLog.info(f"Exporting texture with name: '{getattr(srctex, 'file_name', '<none>')}', external: {srctex.use_external}")
         NifLog.info(f"NiSourceTexture.name = '{getattr(srctex, 'name', '<none>')}'")
         
-        # search for duplicate
-        for block in block_store.block_to_obj:
-            if isinstance(block, NifClasses.NiSourceTexture) and block.get_hash() == srctex.get_hash():
-                # If we're reusing a block, ensure it has a filename if our current one does
-                if not getattr(block, 'file_name', None) and getattr(srctex, 'file_name', None):
-                    block.file_name = srctex.file_name
-                    NifLog.debug(f"Updated duplicate block's file_name to: '{block.file_name}'")
-                
-                # Also ensure the Name property is set
-                if hasattr(block, 'name'):
-                    if not getattr(block, 'name', None) and getattr(srctex, 'name', None):
-                        block.name = srctex.name
-                        NifLog.debug(f"Updated duplicate block's name to: '{block.name}'")
-                    elif not getattr(block, 'name', None) and getattr(block, 'file_name', None):
-                        block.name = os.path.basename(block.file_name)
-                        NifLog.debug(f"Set duplicate block's name from filename: '{block.name}'")
-                
-                return block
-
         # no identical source texture found, so use and register the new one
-        return block_store.register_block(srctex, n_texture)
+        block = block_store.register_block(srctex, n_texture)
+        TextureWriter._register_source_texture_key(block, source_key)
+        return block
 
     def export_tex_desc(self, texdesc=None, uv_set=0, b_texture_node=None):
         """Helper function for export_texturing_property to export each texture slot."""
@@ -418,6 +464,19 @@ class TextureWriter:
         if header['fourcc'] not in ('DXT1', 'DXT3', 'DXT5'):
             raise ValueError(f"Auto-convert produced unsupported format '{header['fourcc']}'")
         NifLog.info(f"Convert succeeded. New DDS fourcc='{header['fourcc']}', size={header['width']}x{header['height']}")
+        return data, header
+
+    @staticmethod
+    def _convert_with_texconv_cached(src_path, desired_fourcc='DXT1'):
+        src = bpy.path.abspath(src_path)
+        cache_key = (src, desired_fourcc)
+        cached = TextureWriter._embed_cache.get(cache_key)
+        if cached:
+            NifLog.info(f"Reusing cached texconv output for '{src}' ({desired_fourcc})")
+            data, header = cached
+            return data, dict(header)
+        data, header = TextureWriter._convert_with_texconv(src, desired_fourcc=desired_fourcc)
+        TextureWriter._embed_cache[cache_key] = (data, dict(header))
         return data, header
 
     @staticmethod

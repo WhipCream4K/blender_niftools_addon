@@ -107,6 +107,7 @@ class MaterialProp:
 
         # search for duplicate
         # (ignore the name string as sometimes import needs to create different materials even when NiMaterialProperty is the same)
+        n_mat_hash = block_store.get_hash_cached(n_mat_prop)
         for n_block in block_store.block_to_obj:
             if not isinstance(n_block, NifClasses.NiMaterialProperty):
                 continue
@@ -119,7 +120,7 @@ class MaterialProp:
 
             # check hash
             first_index = 1 if ignore_strings else 0
-            if n_block.get_hash()[first_index:] == n_mat_prop.get_hash()[first_index:]:
+            if block_store.get_hash_cached(n_block)[first_index:] == n_mat_hash[first_index:]:
                 NifLog.warn(f"Merging materials '{n_mat_prop.name}' and '{n_block.name}' (they are identical in nif)")
                 n_mat_prop = n_block
                 break

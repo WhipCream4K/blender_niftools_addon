@@ -81,6 +81,17 @@ class UpdaterPreferences(bpy.types.AddonPreferences):
         min=0,
         max=59
     )
+    export_profile_enable: bpy.props.BoolProperty(
+        name="Profile Export (cProfile)",
+        description="Enable cProfile for NIF export to help diagnose slow exports",
+        default=False,
+    )
+    export_profile_path: bpy.props.StringProperty(
+        name="Profile Output Path",
+        description="Optional .prof output path (leave empty to log top results in the console)",
+        default="",
+        subtype='FILE_PATH',
+    )
 
     def draw(self, context):
         layout = self.layout
@@ -92,6 +103,11 @@ class UpdaterPreferences(bpy.types.AddonPreferences):
         # updater draw function
         # could also pass in col as third arg
         addon_updater_ops.update_settings_ui(self, context, col)
+
+        box = layout.box()
+        box.label(text="Performance")
+        box.prop(self, "export_profile_enable")
+        box.prop(self, "export_profile_path")
 
     # Alternate draw function, which is more condensed and can be
     # placed within an existing draw function. Only contains:
