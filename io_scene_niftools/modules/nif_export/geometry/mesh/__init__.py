@@ -957,7 +957,7 @@ class Mesh:
             return
 
         # EXPERIMENTAL: Try legacy bind convention for older Gamebryo builds
-        USE_LEGACY_BIND_CONVENTION = True  # Set to True to test older convention
+        use_legacy_bind_convention = NifOp.props.use_legacy_bind_convention
         
         # validate skin and set up quick links
         n_geom._validate_skin()
@@ -966,7 +966,7 @@ class Mesh:
         skelroot = skininst.skeleton_root
 
         NifLog.info(f"[SKIN EXPORT] ========== Bind Position Update ==========")
-        NifLog.info(f"[SKIN EXPORT] Using bind convention: {'LEGACY (older Gamebryo)' if USE_LEGACY_BIND_CONVENTION else 'MODERN (Skyrim/newer)'}")
+        NifLog.info(f"[SKIN EXPORT] Using bind convention: {'LEGACY (older Gamebryo)' if use_legacy_bind_convention else 'MODERN (Skyrim/newer)'}")
 
         # calculate overall offset (including the skeleton root transform) and use its inverse
         geomtransform = (n_geom.get_transform(skelroot) * skelroot.get_transform()).get_inverse(fast=False)
@@ -994,7 +994,7 @@ class Mesh:
             pose_bone = b_obj_armature.pose.bones[bone_name]
             n_bind = math.mathutils_to_nifformat_matrix(math.blender_bind_to_nif_bind(pose_bone.matrix))
             
-            if USE_LEGACY_BIND_CONVENTION:
+            if use_legacy_bind_convention:
                 # LEGACY: Simpler convention used by older Gamebryo builds
                 # Just use the bone's transform relative to skeleton root
                 skindata.bone_list[i].set_transform(bone.get_transform(n_root).get_inverse())
@@ -1002,7 +1002,10 @@ class Mesh:
             else:
                 # MODERN: More complex convention (Skyrim, newer builds)
                 # Compose with geometry transform
-                skindata.bone_list[i].set_transform((n_bind * geomtransform).get_inverse(fast=False))
+                # n_bind is Bone->SkelRoot (from Blender PoseBone matrix)
+                # We need Bone->World, so multiply by SkelRoot->World
+                n_bind_global = n_bind * skelroot.get_transform()
+                skindata.bone_list[i].set_transform((n_bind_global * geomtransform).get_inverse(fast=False))
                 NifLog.info(f"[SKIN EXPORT] Bone {i} ('{bone_name}'): Using modern bind convention")
 
         b_obj_armature.data.pose_position = old_position
@@ -1200,6 +1203,7 @@ class Mesh:
         if b_armature_obj:
             old_position = b_armature_obj.data.pose_position
             b_armature_obj.data.pose_position = 'REST'
+            bpy.context.view_layer.update()
 
         # make a copy with all modifiers applied
         dg = bpy.context.evaluated_depsgraph_get()

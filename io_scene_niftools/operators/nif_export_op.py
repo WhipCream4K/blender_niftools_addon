@@ -72,6 +72,12 @@ class NifExportOperator(Operator, ExportHelper, CommonDevOperator, CommonNif, Co
         description="Use NiBSAnimationNode (for Morrowind)",
         default=False)
 
+    # Use older Gamebryo bind-pose convention for skinning.
+    use_legacy_bind_convention: bpy.props.BoolProperty(
+        name="Use Legacy Bind Convention",
+        description="Use older Gamebryo bind-pose convention (try if meshes flicker in-game)",
+        default=False)
+
     # Stripify geometries. Deprecate? (Strips are slower than triangle shapes.)
     stripify: bpy.props.BoolProperty(
         name="Stripify Geometries",

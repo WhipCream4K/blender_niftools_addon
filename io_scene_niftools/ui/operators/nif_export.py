@@ -119,6 +119,7 @@ class OperatorExportAnimationPanel(OperatorSetting, Panel):
 
         layout.prop(operator, "animation")
         layout.prop(operator, "bs_animation_node")
+        layout.prop(operator, "use_legacy_bind_convention")
 
 
 class OperatorExportOptimisePanel(OperatorSetting, Panel):

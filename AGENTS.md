@@ -26,3 +26,14 @@
 - KF import main file: `io_scene_niftools/kf_import.py` (`KfImport.execute` loads .kf files via `NifFile.load_nif`, sets FPS, and imports keyframes via `TransformAnimation.import_kf_root`).
 - KF export main file: `io_scene_niftools/kf_export.py` (`KfExport.execute` builds the keyframe tree with `TransformAnimation.export_kf_root` and writes the .kf output).
 - Operators wiring: `io_scene_niftools/operators/nif_import_op.py`, `io_scene_niftools/operators/nif_export_op.py`, `io_scene_niftools/operators/kf_import_op.py`, and `io_scene_niftools/operators/kf_export_op.py` instantiate the corresponding classes and call `execute` from the Blender UI.
+
+## Contribution and coding conventions
+- Code changes should be clean, commented where complex, include required docstrings, keep tests green, and update documentation when behavior changes (see `CONTRIBUTING.rst`).
+- Follow PEP 8 and use naming conventions: Blender instances prefixed `b_`, NIF instances prefixed `n_` (see `docs/development/design/conventions.rst`).
+- Development methodology is feature-oriented TDD; write/run tests first, fix iteratively, and keep documentation current (see `docs/development/design/overview.rst` and `docs/development/design/workflow.rst`).
+- Git workflow follows a gitflow-like model: feature branches off `develop`, rebase when `develop` moves, PRs target `develop` (see `docs/development/design/overview.rst`).
+- Documentation uses Sphinx/reST heading conventions (#, *, =, -, ^) and is built with `make html` from `docs/` (see `docs/development/docs.rst` and `docs/development/design/workflow.rst`).
+- Tests run against the installed addon; set `BLENDER_HOME` and `BLENDER_ADDONS_DIR`, then use `testframework/blender-nosetests.[bat|sh]` (see `docs/development/testframework/index.rst`).
+- Integration tests should follow the `test.SingleNif` template with `n_create_data`, `n_check_data`, `b_create_data`, and `b_check_data`, and document features while writing Blender creation steps (see `docs/development/testframework/design/integration.rst`).
+- Configure git `core.autocrlf` to avoid line-ending churn across platforms (see `docs/development/setup/sourcecode.rst`).
+- Prefer `Operator.report` over raising exceptions in operators so tests can catch failures (see `docs/development/design/issues.rst`).
