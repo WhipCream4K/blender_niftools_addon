@@ -94,9 +94,47 @@ class MaterialColorPanel(Panel):
         col.prop(mat, "lightingeffect2")
 
 
+class TextureEmbeddingPanel(Panel):
+    bl_label = "Niftools Texture Embedding"
+    bl_idname = "NIFTOOLS_PT_TextureEmbeddingPanel"
+
+    bl_space_type = 'PROPERTIES'
+    bl_region_type = 'WINDOW'
+    bl_context = "material"
+
+    @classmethod
+    def poll(cls, context):
+        return context.material and context.material.use_nodes
+
+    def draw(self, context):
+        layout = self.layout
+        mat = context.material
+        
+        # Enumerate all Image Texture nodes
+        tex_nodes = [n for n in mat.node_tree.nodes if n.type == 'TEX_IMAGE']
+        
+        if not tex_nodes:
+            layout.label(text="No Image Texture nodes found.")
+            return
+
+        for node in tex_nodes:
+            box = layout.box()
+            row = box.row()
+            row.label(text=f"Node: {node.name}", icon='NODE')
+            
+            if node.image:
+                row.label(text=f"Image: {node.image.name}", icon='IMAGE_DATA')
+            else:
+                row.label(text="No image assigned", icon='ERROR')
+            
+            row = box.row()
+            row.prop(node.niftools, "pixel_format")
+
+
 CLASSES = [
     MaterialColorPanel,
-    MaterialFlagPanel
+    MaterialFlagPanel,
+    TextureEmbeddingPanel
 ]
 
 
