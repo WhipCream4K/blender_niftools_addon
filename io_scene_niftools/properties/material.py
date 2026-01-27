@@ -43,10 +43,41 @@ from bpy.props import (PointerProperty,
                        IntProperty,
                        BoolProperty,
                        FloatProperty,
+                       EnumProperty,
                        )
 from bpy.types import PropertyGroup
 
 from io_scene_niftools.utils.decorators import register_classes, unregister_classes
+
+
+class TextureNodeProperty(PropertyGroup):
+    """Adds custom properties to image texture nodes"""
+
+    pixel_format: EnumProperty(
+        name='Pixel Format',
+        description='Pixel format for embedding this texture',
+        items=[
+            ('AUTO', 'Auto', 'Automatically determine format (DXT1 or DXT5) based on alpha'),
+            ('FMT_RGB', 'FMT_RGB', '24-bit RGB'),
+            ('FMT_RGBA', 'FMT_RGBA', '32-bit RGBA'),
+            ('FMT_PAL', 'FMT_PAL', '8-bit palette index'),
+            ('FMT_PALA', 'FMT_PALA', '8-bit palette index with alpha'),
+            ('FMT_DXT1', 'FMT_DXT1', 'DXT1 compressed'),
+            ('FMT_DXT3', 'FMT_DXT3', 'DXT3 compressed'),
+            ('FMT_DXT5', 'FMT_DXT5', 'DXT5 compressed'),
+            ('FMT_RGB24NONINT', 'FMT_RGB24NONINT', '24-bit non-interleaved (PS2)'),
+            ('FMT_BUMP', 'FMT_BUMP', 'Uncompressed dU/dV gradient bump map'),
+            ('FMT_BUMPLUMA', 'FMT_BUMPLUMA', 'Uncompressed dU/dV bump with luma'),
+            ('FMT_RENDERSPEC', 'FMT_RENDERSPEC', 'Renderer-specific format'),
+            ('FMT_1CH', 'FMT_1CH', 'Generic 1-component format'),
+            ('FMT_2CH', 'FMT_2CH', 'Generic 2-component format'),
+            ('FMT_3CH', 'FMT_3CH', 'Generic 3-component format'),
+            ('FMT_4CH', 'FMT_4CH', 'Generic 4-component format'),
+            ('FMT_DEPTH_STENCIL', 'FMT_DEPTH_STENCIL', 'Depth/stencil surface'),
+            ('FMT_UNKNOWN', 'FMT_UNKNOWN', 'Unknown format'),
+        ],
+        default='AUTO'
+    )
 
 
 class Material(PropertyGroup):
@@ -97,6 +128,7 @@ class AlphaFlags(PropertyGroup):
 
 
 CLASSES = [
+    TextureNodeProperty,
     Material,
     AlphaFlags
 ]
@@ -107,10 +139,12 @@ def register():
 
     bpy.types.Material.niftools = bpy.props.PointerProperty(type=Material)
     bpy.types.Material.niftools_alpha = bpy.props.PointerProperty(type=AlphaFlags)
+    bpy.types.ShaderNodeTexImage.niftools = bpy.props.PointerProperty(type=TextureNodeProperty)
 
 
 def unregister():
     del bpy.types.Material.niftools
     del bpy.types.Material.niftools_alpha
+    del bpy.types.ShaderNodeTexImage.niftools
 
     unregister_classes(CLASSES, __name__)
