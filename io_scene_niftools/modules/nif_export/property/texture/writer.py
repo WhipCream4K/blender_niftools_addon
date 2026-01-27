@@ -93,7 +93,7 @@ class TextureWriter:
         return TextureWriter._source_texture_block_key.get(block)
 
     @staticmethod
-    def export_source_texture(n_texture=None, filename=None):
+    def export_source_texture(n_texture=None, filename=None, b_mat=None):
         """Export a NiSourceTexture.
 
         :param n_texture: The n_texture object in blender to be exported.
@@ -101,6 +101,7 @@ class TextureWriter:
             (this argument is used when exporting NiFlipControllers
             and when exporting default shader slots that have no use in
             being imported into Blender).
+        :param b_mat: Optional blender material to check for export format overrides.
         :return: The exported NiSourceTexture block.
         """
 
@@ -149,13 +150,34 @@ class TextureWriter:
                     srctex.use_external = True
                 else:
                     source_path = bpy.path.abspath(tex_path)
-                    # Determine format based on alpha usage in material
-                    target_fourcc = 'DXT1'
-                    if TextureWriter._is_transparency_used(n_texture):
-                        target_fourcc = 'DXT5'
-                        NifLog.info(f"Transparency detected in '{getattr(n_texture, 'name', 'texture')}', using DXT5.")
+                    # Determine format based on node property, material property, or alpha usage
+                    # Precedence: Connected Texture Format node > Node property (if not AUTO) > Material property (if not AUTO) > Heuristic
+                    # The node-level property is exposed via NiftoolsImageTextureNode in the shader editor.
+                    target_fourcc = 'AUTO'
+
+                    # Trace forward to see if we are connected to a Texture Format node
+                    if isinstance(n_texture, bpy.types.ShaderNodeTexImage):
+                        for output in n_texture.outputs:
+                            for link in output.links:
+                                if link.to_node.bl_idname == 'NiftoolsTextureFormatNode':
+                                    target_fourcc = link.to_node.texture_export_format
+                                    break
+                            if target_fourcc != 'AUTO':
+                                break
+
+                    # If no Texture Format node or it's AUTO, check if the node itself has a specific format set
+                    if target_fourcc == 'AUTO' and isinstance(n_texture, bpy.types.ShaderNodeTexImage) and hasattr(n_texture, "niftools"):
+                        target_fourcc = n_texture.niftools.texture_export_format
+
+                    if target_fourcc == 'AUTO':
+                        if TextureWriter._is_transparency_used(n_texture):
+                            target_fourcc = 'DXT5'
+                            NifLog.info(f"Transparency detected in '{getattr(n_texture, 'name', 'texture')}', using DXT5.")
+                        else:
+                            target_fourcc = 'DXT1'
+                            NifLog.info(f"No transparency detected in '{getattr(n_texture, 'name', 'texture')}', using DXT1.")
                     else:
-                        NifLog.info(f"No transparency detected in '{getattr(n_texture, 'name', 'texture')}', using DXT1.")
+                        NifLog.info(f"Using override format '{target_fourcc}' for '{getattr(n_texture, 'name', 'texture')}'.")
             except Exception as ex:
                 NifLog.warn(f"Failed to resolve texture path for embedding: {ex}. Falling back to external reference.")
                 srctex.use_external = True
@@ -396,7 +418,7 @@ class TextureWriter:
         dwSize, dwFlags, dwHeight, dwWidth, dwPitchOrLinearSize, dwDepth, dwMipMapCount = struct.unpack('<7I', header[0:28])
         pf = header[76:108]
         (pfSize, pfFlags, pfFourCC, pfRGBBitCount, pfRMask, pfGMask, pfBMask, pfAMask) = struct.unpack('<II4sI4I', pf)
-        fourcc = pfFourCC.decode('ascii', errors='ignore').strip('\x00')
+        fourcc = pfFourCC.decode('ascii', errors='ignore').strip('\x00').strip()
         payload_offset = 128
         if fourcc == 'DX10':
             if len(data) < 148:
@@ -409,8 +431,28 @@ class TextureWriter:
                 fourcc = 'DXT3'
             elif dxgi_format in (77, 78):
                 fourcc = 'DXT5'
+            elif dxgi_format == 80:
+                fourcc = 'BC4_UNORM'
+            elif dxgi_format == 83:
+                fourcc = 'BC5_UNORM'
+            elif dxgi_format == 95:
+                fourcc = 'BC6H_UF16'
+            elif dxgi_format == 98:
+                fourcc = 'BC7_UNORM'
+            elif dxgi_format == 61:
+                fourcc = 'R8_UNORM'
+            elif dxgi_format == 49:
+                fourcc = 'R8G8_UNORM'
+            elif dxgi_format == 28:
+                fourcc = 'R8G8B8A8_UNORM'
+            elif dxgi_format == 87:
+                fourcc = 'B8G8R8A8_UNORM'
+            elif dxgi_format == 10:
+                fourcc = 'R16G16B16A16_FLOAT'
+            elif dxgi_format == 2:
+                fourcc = 'R32G32B32A32_FLOAT'
             else:
-                raise ValueError(f'Only BC1/BC2/BC3 embedding supported (DXGI format {dxgi_format})')
+                raise ValueError(f'Unsupported DXGI format {dxgi_format}')
         if not fourcc:
             NifLog.info("Empty fourcc detected, returning None")
             fourcc = None
@@ -421,6 +463,8 @@ class TextureWriter:
             'mip_count': dwMipMapCount if (dwFlags & 0x20000) and dwMipMapCount > 0 else 1,
             'fourcc': fourcc,
             'payload_offset': payload_offset,
+            'pitch': dwPitchOrLinearSize,
+            'bit_count': pfRGBBitCount,
         }
 
     @staticmethod
@@ -468,7 +512,13 @@ class TextureWriter:
         # If header has fourcc but it differs from desired, we trust the header unless it was empty
         # but warn if mismatch? Actually texconv should have produced the desired format.
         
-        if header['fourcc'] not in ('DXT1', 'DXT3', 'DXT5'):
+        # Validate format is supported by writer
+        supported_formats = (
+            'DXT1', 'DXT3', 'DXT5', 
+            'BC1_UNORM', 'BC2_UNORM', 'BC3_UNORM', 'BC4_UNORM', 'BC5_UNORM', 'BC6H_UF16', 'BC7_UNORM',
+            'R8_UNORM', 'R8G8_UNORM', 'R8G8B8A8_UNORM', 'B8G8R8A8_UNORM', 'R16G16B16A16_FLOAT', 'R32G32B32A32_FLOAT'
+        )
+        if not header['fourcc'] or header['fourcc'] not in supported_formats:
             raise ValueError(f"Auto-convert produced unsupported format '{header['fourcc']}'")
         NifLog.info(f"Convert succeeded. New DDS fourcc='{header['fourcc']}', size={header['width']}x{header['height']}")
         return data, header
@@ -489,9 +539,22 @@ class TextureWriter:
     @staticmethod
     def _build_nipixeldata_from_dds(data, header):
         fourcc_to_fmt = {
-            'DXT1': ('FMT_DXT1', 8),
-            'DXT3': ('FMT_DXT3', 16),
-            'DXT5': ('FMT_DXT5', 16),
+            'DXT1': ('FMT_DXT1', 8, True),
+            'DXT3': ('FMT_DXT3', 16, True),
+            'DXT5': ('FMT_DXT5', 16, True),
+            'BC1_UNORM': ('FMT_DXT1', 8, True),
+            'BC2_UNORM': ('FMT_DXT3', 16, True),
+            'BC3_UNORM': ('FMT_DXT5', 16, True),
+            'BC4_UNORM': ('FMT_RENDERSPEC', 8, True),
+            'BC5_UNORM': ('FMT_RENDERSPEC', 16, True),
+            'BC6H_UF16': ('FMT_RENDERSPEC', 16, True),
+            'BC7_UNORM': ('FMT_RENDERSPEC', 16, True),
+            'R8_UNORM': ('FMT_1CH', 1, False),
+            'R8G8_UNORM': ('FMT_2CH', 2, False),
+            'R8G8B8A8_UNORM': ('FMT_RGBA', 4, False),
+            'B8G8R8A8_UNORM': ('FMT_RGBA', 4, False),
+            'R16G16B16A16_FLOAT': ('FMT_4CH', 8, False),
+            'R32G32B32A32_FLOAT': ('FMT_4CH', 16, False),
         }
         fourcc = header['fourcc']
         if fourcc not in fourcc_to_fmt:
@@ -500,15 +563,27 @@ class TextureWriter:
         w, h = header['width'], header['height']
         mip_total = header['mip_count']
         mip_to_write = 1 if getattr(NifOp.props, 'embed_only_base_mipmap', True) else mip_total
-        bytes_per_block = fourcc_to_fmt[fourcc][1]
+        fmt_info = fourcc_to_fmt[fourcc]
+        bytes_per_unit = fmt_info[1]
+        is_compressed = fmt_info[2]
 
         offset = 0
         chunks = []
         mip_entries = []
+        header_pitch = header.get('pitch', 0)
         for i in range(mip_to_write):
-            bw = max(1, (w + 3) // 4)
-            bh = max(1, (h + 3) // 4)
-            size = bw * bh * bytes_per_block
+            if is_compressed:
+                bw = max(1, (w + 3) // 4)
+                bh = max(1, (h + 3) // 4)
+                size = bw * bh * bytes_per_unit
+            else:
+                # compute pitch (bytes per scanline) aligned to 4 bytes
+                pitch = ((w * bytes_per_unit + 3) // 4) * 4
+                if header_pitch and i == 0:
+                    # validate that computed pitch matches header pitch
+                    if pitch != header_pitch:
+                        NifLog.warn(f"Pitch mismatch: computed {pitch}, header {header_pitch}. Using computed.")
+                size = pitch * h
             chunks.append(payload[offset:offset + size])
             mip_entries.append((w, h, offset, size))
             offset += size
@@ -517,7 +592,7 @@ class TextureWriter:
 
         pix = NifClasses.NiPixelData(NifData.data)
         # pixel_format
-        fmt_name = fourcc_to_fmt[fourcc][0]
+        fmt_name = fmt_info[0]
         try:
             pix.pixel_format = getattr(NifClasses.PixelFormat, fmt_name)
         except Exception:
@@ -533,6 +608,48 @@ class TextureWriter:
                 pix.tiling = 'TILE_NONE'
             except Exception:
                 pass
+        # additional fields for uncompressed formats
+        bytes_per_pixel = 0 if is_compressed else bytes_per_unit
+        try:
+            pix.bytes_per_pixel = bytes_per_pixel
+            NifLog.debug(f"Set bytes_per_pixel = {bytes_per_pixel}")
+        except Exception:
+            NifLog.debug("Could not set bytes_per_pixel")
+        # bits per pixel (0 for compressed, else bits per pixel)
+        bits_per_pixel = 0 if is_compressed else bytes_per_unit * 8
+        try:
+            pix.bits_per_pixel = bits_per_pixel
+            NifLog.debug(f"Set bits_per_pixel = {bits_per_pixel}")
+        except Exception:
+            NifLog.debug("Could not set bits_per_pixel")
+        # set masks for uncompressed RGB(A) formats (version <= 168034305)
+        if not is_compressed and hasattr(NifData, 'data') and hasattr(NifData.data, 'version') and NifData.data.version <= 168034305:
+            # mask mapping for uncompressed formats
+            if fourcc == 'R8_UNORM':
+                pix.red_mask = 0xFF
+                pix.green_mask = 0
+                pix.blue_mask = 0
+                pix.alpha_mask = 0
+                NifLog.debug("Set R8 masks")
+            elif fourcc == 'R8G8_UNORM':
+                pix.red_mask = 0x00FF
+                pix.green_mask = 0xFF00
+                pix.blue_mask = 0
+                pix.alpha_mask = 0
+                NifLog.debug("Set R8G8 masks")
+            elif fourcc == 'R8G8B8A8_UNORM':
+                pix.red_mask = 0x000000FF
+                pix.green_mask = 0x0000FF00
+                pix.blue_mask = 0x00FF0000
+                pix.alpha_mask = 0xFF000000
+                NifLog.debug("Set RGBA masks")
+            elif fourcc == 'B8G8R8A8_UNORM':
+                pix.red_mask = 0x00FF0000   # blue channel in BGRA
+                pix.green_mask = 0x0000FF00
+                pix.blue_mask = 0x000000FF   # red channel in BGRA
+                pix.alpha_mask = 0xFF000000
+                NifLog.debug("Set BGRA masks")
+            # floating point formats have no masks
         # mip maps meta
         try:
             pix.num_mipmaps = len(mip_entries)
