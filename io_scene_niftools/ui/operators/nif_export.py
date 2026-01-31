@@ -145,6 +145,8 @@ class OperatorExportOptimisePanel(OperatorSetting, Panel):
         layout.prop(operator, "stitch_strips")
         layout.prop(operator, "force_dds")
         layout.prop(operator, "embed_textures")
+        if operator.embed_textures:
+            layout.prop(operator, "embed_only_base_mipmap")
         layout.prop(operator, "optimise_materials")
         layout.prop(operator, "sep_tangent_space")
 

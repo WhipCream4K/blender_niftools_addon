@@ -93,7 +93,7 @@ class TextureWriter:
         return TextureWriter._source_texture_block_key.get(block)
 
     @staticmethod
-    def export_source_texture(n_texture=None, filename=None, b_mat=None):
+    def export_source_texture(n_texture=None, filename=None):
         """Export a NiSourceTexture.
 
         :param n_texture: The n_texture object in blender to be exported.
@@ -150,24 +150,33 @@ class TextureWriter:
                     srctex.use_external = True
                 else:
                     source_path = bpy.path.abspath(tex_path)
-                    # Determine format based on node property, material property, or alpha usage
-                    # Precedence: Connected Texture Format node > Node property (if not AUTO) > Material property (if not AUTO) > Heuristic
-                    # The node-level property is exposed via NiftoolsImageTextureNode in the shader editor.
+                    # Determine format based on node property or alpha usage
                     target_fourcc = 'AUTO'
 
-                    # Trace forward to see if we are connected to a Texture Format node
-                    if isinstance(n_texture, bpy.types.ShaderNodeTexImage):
-                        for output in n_texture.outputs:
-                            for link in output.links:
-                                if link.to_node.bl_idname == 'NiftoolsTextureFormatNode':
-                                    target_fourcc = link.to_node.texture_export_format
-                                    break
-                            if target_fourcc != 'AUTO':
-                                break
-
-                    # If no Texture Format node or it's AUTO, check if the node itself has a specific format set
-                    if target_fourcc == 'AUTO' and isinstance(n_texture, bpy.types.ShaderNodeTexImage) and hasattr(n_texture, "niftools"):
-                        target_fourcc = n_texture.niftools.texture_export_format
+                    # Check if the node itself has a specific format set
+                    if isinstance(n_texture, bpy.types.ShaderNodeTexImage) and hasattr(n_texture, "niftools"):
+                        pixel_format = n_texture.niftools.pixel_format
+                        mapping = {
+                            'FMT_RGB': 'R8G8B8A8_UNORM',
+                            'FMT_RGBA': 'R8G8B8A8_UNORM',
+                            'FMT_PAL': 'R8_UNORM',
+                            'FMT_PALA': 'R8G8_UNORM',
+                            'FMT_DXT1': 'DXT1',
+                            'FMT_DXT3': 'DXT3',
+                            'FMT_DXT5': 'DXT5',
+                            'FMT_RGB24NONINT': 'R8G8B8A8_UNORM',
+                            'FMT_BUMP': 'BC5_UNORM',
+                            'FMT_BUMPLUMA': 'BC5_UNORM',
+                            'FMT_RENDERSPEC': 'BC7_UNORM',
+                            'FMT_1CH': 'R8_UNORM',
+                            'FMT_2CH': 'R8G8_UNORM',
+                            'FMT_3CH': 'R8G8B8A8_UNORM',
+                            'FMT_4CH': 'R8G8B8A8_UNORM',
+                            'FMT_DEPTH_STENCIL': 'AUTO',
+                            'FMT_UNKNOWN': 'AUTO',
+                            'AUTO': 'AUTO'
+                        }
+                        target_fourcc = mapping.get(pixel_format, 'AUTO')
 
                     if target_fourcc == 'AUTO':
                         if TextureWriter._is_transparency_used(n_texture):
@@ -516,7 +525,7 @@ class TextureWriter:
         supported_formats = (
             'DXT1', 'DXT3', 'DXT5', 
             'BC1_UNORM', 'BC2_UNORM', 'BC3_UNORM', 'BC4_UNORM', 'BC5_UNORM', 'BC6H_UF16', 'BC7_UNORM',
-            'R8_UNORM', 'R8G8_UNORM', 'R8G8B8A8_UNORM', 'B8G8R8A8_UNORM', 'R16G16B16A16_FLOAT', 'R32G32B32A32_FLOAT'
+            'R8_UNORM', 'R8G8_UNORM', 'R8G8B8A8_UNORM', 'R16G16B16A16_FLOAT', 'R32G32B32A32_FLOAT'
         )
         if not header['fourcc'] or header['fourcc'] not in supported_formats:
             raise ValueError(f"Auto-convert produced unsupported format '{header['fourcc']}'")
@@ -562,7 +571,11 @@ class TextureWriter:
         payload = data[header['payload_offset']:]
         w, h = header['width'], header['height']
         mip_total = header['mip_count']
-        mip_to_write = 1 if getattr(NifOp.props, 'embed_only_base_mipmap', True) else mip_total
+        
+        # Determine how many mips to write based on operator property
+        embed_only_base = getattr(NifOp.props, 'embed_only_base_mipmap', True)
+        mip_to_write = 1 if embed_only_base else mip_total
+        
         fmt_info = fourcc_to_fmt[fourcc]
         bytes_per_unit = fmt_info[1]
         is_compressed = fmt_info[2]
@@ -622,34 +635,65 @@ class TextureWriter:
             NifLog.debug(f"Set bits_per_pixel = {bits_per_pixel}")
         except Exception:
             NifLog.debug("Could not set bits_per_pixel")
-        # set masks for uncompressed RGB(A) formats (version <= 168034305)
-        if not is_compressed and hasattr(NifData, 'data') and hasattr(NifData.data, 'version') and NifData.data.version <= 168034305:
-            # mask mapping for uncompressed formats
-            if fourcc == 'R8_UNORM':
-                pix.red_mask = 0xFF
-                pix.green_mask = 0
-                pix.blue_mask = 0
-                pix.alpha_mask = 0
-                NifLog.debug("Set R8 masks")
-            elif fourcc == 'R8G8_UNORM':
-                pix.red_mask = 0x00FF
-                pix.green_mask = 0xFF00
-                pix.blue_mask = 0
-                pix.alpha_mask = 0
-                NifLog.debug("Set R8G8 masks")
-            elif fourcc == 'R8G8B8A8_UNORM':
-                pix.red_mask = 0x000000FF
-                pix.green_mask = 0x0000FF00
-                pix.blue_mask = 0x00FF0000
-                pix.alpha_mask = 0xFF000000
-                NifLog.debug("Set RGBA masks")
-            elif fourcc == 'B8G8R8A8_UNORM':
-                pix.red_mask = 0x00FF0000   # blue channel in BGRA
-                pix.green_mask = 0x0000FF00
-                pix.blue_mask = 0x000000FF   # red channel in BGRA
-                pix.alpha_mask = 0xFF000000
-                NifLog.debug("Set BGRA masks")
-            # floating point formats have no masks
+
+        # set masks and channels for uncompressed RGB(A) formats
+        if not is_compressed:
+            # Mask mapping for uncompressed formats (older versions)
+            if hasattr(NifData, 'data') and hasattr(NifData.data, 'version') and NifData.data.version <= 168034305:
+                if fourcc == 'R8_UNORM':
+                    pix.red_mask = 0xFF
+                    pix.green_mask = 0
+                    pix.blue_mask = 0
+                    pix.alpha_mask = 0
+                    NifLog.debug("Set R8 masks")
+                elif fourcc == 'R8G8_UNORM':
+                    pix.red_mask = 0x00FF
+                    pix.green_mask = 0xFF00
+                    pix.blue_mask = 0
+                    pix.alpha_mask = 0
+                    NifLog.debug("Set R8G8 masks")
+                elif fourcc == 'R8G8B8A8_UNORM':
+                    pix.red_mask = 0x000000FF
+                    pix.green_mask = 0x0000FF00
+                    pix.blue_mask = 0x00FF0000
+                    pix.alpha_mask = 0xFF000000
+                    NifLog.debug("Set RGBA masks")
+
+            # Channel mapping for uncompressed formats (newer versions or versions with channels array)
+            if hasattr(pix, "channels"):
+                channel_configs = {
+                    'R8_UNORM': [('COMP_RED', 8)],
+                    'R8G8_UNORM': [('COMP_RED', 8), ('COMP_GREEN', 8)],
+                    'R8G8B8A8_UNORM': [('COMP_RED', 8), ('COMP_GREEN', 8), ('COMP_BLUE', 8), ('COMP_ALPHA', 8)]
+                }
+                config = channel_configs.get(fourcc)
+                if config:
+                    for i, (ctype, bits) in enumerate(config):
+                        if i < len(pix.channels):
+                            c = pix.channels[i]
+                            try:
+                                c.type = getattr(NifClasses.PixelComponent, ctype)
+                            except AttributeError:
+                                c.type = ctype
+                            try:
+                                c.convention = getattr(NifClasses.PixelRepresentation, 'REP_NORM_INT')
+                            except AttributeError:
+                                c.convention = 'REP_NORM_INT'
+                            c.bits_per_channel = bits
+                            c.is_signed = False
+                    NifLog.debug(f"Set channel bits for {fourcc}")
+
+            # Old Fast Compare for older versions (<= 10.3.0.2)
+            if hasattr(pix, "old_fast_compare") and hasattr(NifData, 'data') and hasattr(NifData.data, 'version') and NifData.data.version <= 168034305:
+                if fourcc == 'R8_UNORM':
+                    # 8bpp
+                    pix.old_fast_compare[:] = [34, 0, 0, 0, 0, 0, 0, 0]
+                    NifLog.debug("Set R8 old_fast_compare")
+                elif fourcc == 'R8G8B8A8_UNORM':
+                    # 32bpp (signed byte representation: 129 -> -127, 130 -> -126)
+                    pix.old_fast_compare[:] = [-127, 8, -126, 32, 0, 8, 16, 24]
+                    NifLog.debug("Set RGBA old_fast_compare")
+
         # mip maps meta
         try:
             pix.num_mipmaps = len(mip_entries)
