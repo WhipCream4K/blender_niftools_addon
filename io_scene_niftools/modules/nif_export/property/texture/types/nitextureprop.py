@@ -45,7 +45,8 @@ from nifgen.formats.nif import classes as NifClasses
 from io_scene_niftools.modules.nif_export.block_registry import block_store
 from io_scene_niftools.modules.nif_export.property.texture import TextureSlotManager, TextureWriter
 from io_scene_niftools.utils.logging import NifLog
-from io_scene_niftools.utils.singleton import NifData
+from io_scene_niftools.utils.singleton import NifData, NifOp
+from io_scene_niftools.zone4.texture import apply_toonramp_shader_texture
 
 
 def _get_addon_preferences():
@@ -123,7 +124,16 @@ class NiTextureProp(TextureSlotManager):
                 source_key = ("external", getattr(texdesc.source, "file_name", None))
             slots.append((slot_name, texdesc.uv_set, source_key))
         slots.sort(key=lambda item: item[0])
-        return (texprop.flags, texprop.apply_mode, texprop.texture_count, tuple(slots))
+        shader_slots = []
+        for shadertexdesc in getattr(texprop, "shader_textures", []):
+            if not getattr(shadertexdesc, "has_map", False):
+                shader_slots.append((False, None, None))
+                continue
+            source_key = TextureWriter.get_source_texture_key_for_block(shadertexdesc.map.source)
+            if source_key is None and shadertexdesc.map.source:
+                source_key = ("external", getattr(shadertexdesc.map.source, "file_name", None))
+            shader_slots.append((True, shadertexdesc.map_id, source_key))
+        return (texprop.flags, texprop.apply_mode, texprop.texture_count, texprop.num_shader_textures, tuple(slots), tuple(shader_slots))
 
     def export_texturing_property(self, flags=0x0001, applymode=None, b_mat=None):
         """Export texturing property."""
@@ -140,6 +150,9 @@ class NiTextureProp(TextureSlotManager):
 
         self.export_texture_shader_effect(texprop)
         self.export_nitextureprop_tex_descs(texprop)
+
+        if bpy.context.scene.niftools_scene.game == 'ZONE4' and getattr(NifOp.props, 'apply_toonramp', True):
+            apply_toonramp_shader_texture(texprop)
 
         key = self._build_texturing_prop_key(texprop)
         existing = NiTextureProp._texturing_prop_key_map.get(key)

@@ -47,4 +47,11 @@ if exist "%ROOT%\bin\texconv.exe" (
   echo WARNING: "%ROOT%\bin\texconv.exe" not found. Auto-convert to DXT1 will fall back to PATH.
 )
 
+if exist "%ROOT%\bin\ToonRamp.png" (
+  echo Copying ToonRamp.png to "%ADDON_DST%\dependencies\bin\ToonRamp.png"
+  copy /y "%ROOT%\bin\ToonRamp.png" "%ADDON_DST%\dependencies\bin\ToonRamp.png" >nul 2>&1
+) else (
+  echo WARNING: "%ROOT%\bin\ToonRamp.png" not found. Zone4 ToonRamp embedding may fail.
+)
+
 :end

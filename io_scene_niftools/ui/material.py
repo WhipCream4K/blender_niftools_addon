@@ -120,12 +120,8 @@ class TextureEmbeddingPanel(Panel):
         for node in tex_nodes:
             box = layout.box()
             row = box.row()
-            row.label(text=f"Node: {node.name}", icon='NODE')
-            
-            if node.image:
-                row.label(text=f"Image: {node.image.name}", icon='IMAGE_DATA')
-            else:
-                row.label(text="No image assigned", icon='ERROR')
+            display_name = node.label if node.label else node.name
+            row.label(text=f"Node: {display_name}", icon='NODE')
             
             row = box.row()
             row.prop(node.niftools, "pixel_format")

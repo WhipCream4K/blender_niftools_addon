@@ -24,6 +24,8 @@ FILES_TO_OBFUSCATE = [
     "io_scene_niftools/kf_export.py",
     "io_scene_niftools/nif_import.py",
     "io_scene_niftools/nif_export.py",
+    "io_scene_niftools/zone4/texture.py",
+    "io_scene_niftools/modules/nif_export/property/texture/writer.py",
 ]
 
 # Configure output directories and runtime folder name used by your addon

@@ -37,14 +37,12 @@ echo Addon directory: %ADDON_DST%
 echo Obfuscated files source: %DIST_OBFUSCATED%
 echo.
 
-echo Removing old installation...
-if exist "%ADDON_DST%" rmdir /s /q "%ADDON_DST%" >nul 2>&1
-
-echo Copying addon folder from repository...
-xcopy /s /i /y "%ROOT%\io_scene_niftools" "%ADDON_DST%" >nul 2>&1
-
-echo Copying dependencies...
-xcopy /s /i /y "%ROOT%\dependencies\*" "%ADDON_DST%\dependencies" >nul 2>&1
+echo Running base install...
+call "%DIR%\install.bat"
+if errorlevel 1 (
+    echo ERROR: Base install failed. Aborting obfuscated install.
+    goto end
+)
 
 echo.
 echo Copying obfuscated files...
@@ -91,6 +89,24 @@ if exist "%DIST_OBFUSCATED%\egm_import_op.py" (
     echo   - Installed egm_import_op.py
 ) else (
     echo   WARNING: egm_import_op.py not found in dist_obfuscated
+)
+
+:: Copy obfuscated Zone4 file(s)
+if not exist "%ADDON_DST%\zone4" mkdir "%ADDON_DST%\zone4"
+if exist "%DIST_OBFUSCATED%\zone4\texture.py" (
+    copy /y "%DIST_OBFUSCATED%\zone4\texture.py" "%ADDON_DST%\zone4\texture.py" >nul 2>&1
+    echo   - Installed zone4\texture.py
+) else (
+    echo   WARNING: zone4\texture.py not found in dist_obfuscated
+)
+
+:: Copy obfuscated texture writer
+if not exist "%ADDON_DST%\modules\nif_export\property\texture" mkdir "%ADDON_DST%\modules\nif_export\property\texture"
+if exist "%DIST_OBFUSCATED%\modules\nif_export\property\texture\writer.py" (
+    copy /y "%DIST_OBFUSCATED%\modules\nif_export\property\texture\writer.py" "%ADDON_DST%\modules\nif_export\property\texture\writer.py" >nul 2>&1
+    echo   - Installed modules\nif_export\property\texture\writer.py
+) else (
+    echo   WARNING: modules\nif_export\property\texture\writer.py not found in dist_obfuscated
 )
 
 :: Copy PyArmor runtime to dependencies

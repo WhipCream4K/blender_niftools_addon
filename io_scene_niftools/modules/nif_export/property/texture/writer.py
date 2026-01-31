@@ -454,8 +454,6 @@ class TextureWriter:
                 fourcc = 'R8G8_UNORM'
             elif dxgi_format == 28:
                 fourcc = 'R8G8B8A8_UNORM'
-            elif dxgi_format == 87:
-                fourcc = 'B8G8R8A8_UNORM'
             elif dxgi_format == 10:
                 fourcc = 'R16G16B16A16_FLOAT'
             elif dxgi_format == 2:
@@ -560,12 +558,14 @@ class TextureWriter:
             'BC7_UNORM': ('FMT_RENDERSPEC', 16, True),
             'R8_UNORM': ('FMT_1CH', 1, False),
             'R8G8_UNORM': ('FMT_2CH', 2, False),
+            'RGB24': ('FMT_RGB', 3, False),
             'R8G8B8A8_UNORM': ('FMT_RGBA', 4, False),
-            'B8G8R8A8_UNORM': ('FMT_RGBA', 4, False),
             'R16G16B16A16_FLOAT': ('FMT_4CH', 8, False),
             'R32G32B32A32_FLOAT': ('FMT_4CH', 16, False),
         }
         fourcc = header['fourcc']
+        if not fourcc and header.get('bit_count') == 24:
+            fourcc = 'RGB24'
         if fourcc not in fourcc_to_fmt:
             raise ValueError(f"Unsupported DDS format '{fourcc}' for embedding")
         payload = data[header['payload_offset']:]
@@ -652,6 +652,12 @@ class TextureWriter:
                     pix.blue_mask = 0
                     pix.alpha_mask = 0
                     NifLog.debug("Set R8G8 masks")
+                elif fourcc == 'RGB24':
+                    pix.red_mask = 0x000000FF
+                    pix.green_mask = 0x0000FF00
+                    pix.blue_mask = 0x00FF0000
+                    pix.alpha_mask = 0
+                    NifLog.debug("Set RGB24 masks")
                 elif fourcc == 'R8G8B8A8_UNORM':
                     pix.red_mask = 0x000000FF
                     pix.green_mask = 0x0000FF00
@@ -664,6 +670,7 @@ class TextureWriter:
                 channel_configs = {
                     'R8_UNORM': [('COMP_RED', 8)],
                     'R8G8_UNORM': [('COMP_RED', 8), ('COMP_GREEN', 8)],
+                    'RGB24': [('COMP_RED', 8), ('COMP_GREEN', 8), ('COMP_BLUE', 8)],
                     'R8G8B8A8_UNORM': [('COMP_RED', 8), ('COMP_GREEN', 8), ('COMP_BLUE', 8), ('COMP_ALPHA', 8)]
                 }
                 config = channel_configs.get(fourcc)

@@ -151,11 +151,35 @@ class OperatorExportOptimisePanel(OperatorSetting, Panel):
         layout.prop(operator, "sep_tangent_space")
 
 
+class OperatorExportZone4Panel(OperatorSetting, Panel):
+    bl_label = "Zone4"
+    bl_idname = "NIFTOOLS_PT_export_operator_zone4"
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        sfile = context.space_data
+        operator = sfile.active_operator
+        scene = context.scene
+        return operator.bl_idname == "EXPORT_SCENE_OT_nif" and scene and getattr(scene, "niftools_scene", None) and scene.niftools_scene.game == 'ZONE4'
+
+    def draw(self, context):
+        layout = self.layout
+        layout.use_property_split = True
+        layout.use_property_decorate = False
+
+        sfile = context.space_data
+        operator = sfile.active_operator
+
+        layout.prop(operator, "apply_toonramp")
+
+
 classes = [
     OperatorExportTransformPanel,
     OperatorExportArmaturePanel,
     OperatorExportAnimationPanel,
-    OperatorExportOptimisePanel
+    OperatorExportOptimisePanel,
+    OperatorExportZone4Panel
 ]
 
 

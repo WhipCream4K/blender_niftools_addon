@@ -141,6 +141,12 @@ class NifExportOperator(Operator, ExportHelper, CommonDevOperator, CommonNif, Co
         description="If enabled, only embed the top-level (largest) mip. Disable to embed all mipmaps from the source DDS.",
         default=True)
 
+    # Zone4: Append ToonRamp shader texture
+    apply_toonramp: bpy.props.BoolProperty(
+        name="Apply ToonRamp",
+        description="Append ToonRamp.dds as a shader texture for Zone4",
+        default=True)
+
 
     # Whether or not to remove duplicate materials
     optimise_materials: bpy.props.BoolProperty(
