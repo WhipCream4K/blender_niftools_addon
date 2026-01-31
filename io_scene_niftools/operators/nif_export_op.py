@@ -139,7 +139,7 @@ class NifExportOperator(Operator, ExportHelper, CommonDevOperator, CommonNif, Co
     embed_only_base_mipmap: bpy.props.BoolProperty(
         name="Embed Base Mip Only",
         description="If enabled, only embed the top-level (largest) mip. Disable to embed all mipmaps from the source DDS.",
-        default=True)
+        default=False)
 
     # Zone4: Append ToonRamp shader texture
     apply_toonramp: bpy.props.BoolProperty(
