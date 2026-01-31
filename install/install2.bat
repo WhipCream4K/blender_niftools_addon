@@ -21,6 +21,13 @@ echo Installing Obfuscated License Files
 echo ============================================================
 echo.
 
+echo Generating obfuscated files...
+python "%ROOT%\obfuscate_license.py"
+if errorlevel 1 (
+    echo ERROR: Obfuscation failed. Aborting install.
+    goto end
+)
+
 :: Check if dist_obfuscated folder exists
 if not exist "%DIST_OBFUSCATED%" (
     echo ERROR: dist_obfuscated folder not found at: %DIST_OBFUSCATED%
@@ -46,67 +53,12 @@ if errorlevel 1 (
 
 echo.
 echo Copying obfuscated files...
-
-:: Copy obfuscated license_check.py
-if exist "%DIST_OBFUSCATED%\license_check.py" (
-    copy /y "%DIST_OBFUSCATED%\license_check.py" "%ADDON_DST%\license_check.py" >nul 2>&1
-    echo   - Installed license_check.py
+if exist "%DIST_OBFUSCATED%" (
+    xcopy /e /i /y "%DIST_OBFUSCATED%" "%ADDON_DST%" >nul 2>&1
+    if exist "%ADDON_DST%\pyarmor_runtime_000000" rmdir /s /q "%ADDON_DST%\pyarmor_runtime_000000" >nul 2>&1
+    echo   - Installed obfuscated files
 ) else (
-    echo   WARNING: license_check.py not found in dist_obfuscated
-)
-
-:: Copy obfuscated operator files
-if exist "%DIST_OBFUSCATED%\nif_export_op.py" (
-    copy /y "%DIST_OBFUSCATED%\nif_export_op.py" "%ADDON_DST%\operators\nif_export_op.py" >nul 2>&1
-    echo   - Installed nif_export_op.py
-) else (
-    echo   WARNING: nif_export_op.py not found in dist_obfuscated
-)
-
-if exist "%DIST_OBFUSCATED%\nif_import_op.py" (
-    copy /y "%DIST_OBFUSCATED%\nif_import_op.py" "%ADDON_DST%\operators\nif_import_op.py" >nul 2>&1
-    echo   - Installed nif_import_op.py
-) else (
-    echo   WARNING: nif_import_op.py not found in dist_obfuscated
-)
-
-if exist "%DIST_OBFUSCATED%\kf_export_op.py" (
-    copy /y "%DIST_OBFUSCATED%\kf_export_op.py" "%ADDON_DST%\operators\kf_export_op.py" >nul 2>&1
-    echo   - Installed kf_export_op.py
-) else (
-    echo   WARNING: kf_export_op.py not found in dist_obfuscated
-)
-
-if exist "%DIST_OBFUSCATED%\kf_import_op.py" (
-    copy /y "%DIST_OBFUSCATED%\kf_import_op.py" "%ADDON_DST%\operators\kf_import_op.py" >nul 2>&1
-    echo   - Installed kf_import_op.py
-) else (
-    echo   WARNING: kf_import_op.py not found in dist_obfuscated
-)
-
-if exist "%DIST_OBFUSCATED%\egm_import_op.py" (
-    copy /y "%DIST_OBFUSCATED%\egm_import_op.py" "%ADDON_DST%\operators\egm_import_op.py" >nul 2>&1
-    echo   - Installed egm_import_op.py
-) else (
-    echo   WARNING: egm_import_op.py not found in dist_obfuscated
-)
-
-:: Copy obfuscated Zone4 file(s)
-if not exist "%ADDON_DST%\zone4" mkdir "%ADDON_DST%\zone4"
-if exist "%DIST_OBFUSCATED%\zone4\texture.py" (
-    copy /y "%DIST_OBFUSCATED%\zone4\texture.py" "%ADDON_DST%\zone4\texture.py" >nul 2>&1
-    echo   - Installed zone4\texture.py
-) else (
-    echo   WARNING: zone4\texture.py not found in dist_obfuscated
-)
-
-:: Copy obfuscated texture writer
-if not exist "%ADDON_DST%\modules\nif_export\property\texture" mkdir "%ADDON_DST%\modules\nif_export\property\texture"
-if exist "%DIST_OBFUSCATED%\modules\nif_export\property\texture\writer.py" (
-    copy /y "%DIST_OBFUSCATED%\modules\nif_export\property\texture\writer.py" "%ADDON_DST%\modules\nif_export\property\texture\writer.py" >nul 2>&1
-    echo   - Installed modules\nif_export\property\texture\writer.py
-) else (
-    echo   WARNING: modules\nif_export\property\texture\writer.py not found in dist_obfuscated
+    echo   WARNING: dist_obfuscated not found, skipping obfuscated file copy
 )
 
 :: Copy PyArmor runtime to dependencies

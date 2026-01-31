@@ -17,6 +17,13 @@ set DEPS="io_scene_niftools\dependencies"
 set "GENERATED_FOLDER=%ROOT%\dependencies\nifgen"
 if exist "%DIR%\temp" rmdir /s /q "%DIR%\temp"
 
+echo Generating obfuscated files...
+python "%ROOT%\obfuscate_license.py"
+if errorlevel 1 (
+    echo ERROR: Obfuscation failed. Aborting.
+    exit /b 1
+)
+
 mkdir "%DIR%"\temp
 
 pushd "%DIR%"\temp
@@ -28,8 +35,14 @@ python -m pip install "PyFFI==%PYFFI_VERSION%" --target="%DEPS%"
 
 xcopy "%GENERATED_FOLDER%" "%DEPS%\nifgen" /s /q /i
 
-:: Copy all obfuscated .py files recursively preserving structure
-xcopy /e /i /y "%ROOT%\dist_obfuscated" "%DIR%\temp\io_scene_niftools"
+:: Copy all obfuscated files recursively preserving structure
+if exist "%ROOT%\dist_obfuscated" (
+    xcopy /e /i /y "%ROOT%\dist_obfuscated" "%DIR%\temp\io_scene_niftools" >nul 2>&1
+) else (
+    echo ERROR: dist_obfuscated not found. Run obfuscate_license.py first.
+    popd
+    exit /b 1
+)
 
 :: Remove pyarmor_runtime_000000 from the copied files (keep it only in dependencies)
 if exist "%DIR%\temp\io_scene_niftools\pyarmor_runtime_000000" (
@@ -37,7 +50,11 @@ if exist "%DIR%\temp\io_scene_niftools\pyarmor_runtime_000000" (
 )
 
 :: Copy PyArmor runtime to dependencies
-xcopy /e /i /y "%ROOT%\dist_obfuscated\pyarmor_runtime_000000" "%DEPS%\pyarmor_runtime_000000"
+if exist "%ROOT%\dist_obfuscated\pyarmor_runtime_000000" (
+    xcopy /e /i /y "%ROOT%\dist_obfuscated\pyarmor_runtime_000000" "%DEPS%\pyarmor_runtime_000000" >nul 2>&1
+) else (
+    echo WARNING: pyarmor_runtime_000000 not found in dist_obfuscated
+)
 
 :: Copy texconv.exe to dependencies/bin
 if not exist "%DEPS%\bin" mkdir "%DEPS%\bin"
