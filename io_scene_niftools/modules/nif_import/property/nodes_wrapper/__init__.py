@@ -213,6 +213,34 @@ class NodesWrapper:
         else:
             transp = self.tree.nodes.new('ShaderNodeBsdfTransparent')
             alpha_mixer = self.tree.nodes.new('ShaderNodeMixShader')
+            niftools_alpha = self.tree.nodes.new('ShaderNodeRGB')
+            niftools_alpha.name = "Niftools Alpha"
+            niftools_alpha.label = "Niftools Alpha"
+            alpha_value = 1.0
+            if hasattr(self.b_mat, "niftools"):
+                try:
+                    alpha_value = float(self.b_mat.niftools.emissive_alpha[0])
+                except (TypeError, ValueError, IndexError):
+                    alpha_value = 1.0
+            niftools_alpha.outputs[0].default_value = (alpha_value, alpha_value, alpha_value, 1.0)
+            niftools_alpha_sep = self.tree.nodes.new('ShaderNodeSeparateRGB')
+            self.tree.links.new(niftools_alpha.outputs[0], niftools_alpha_sep.inputs[0])
+            try:
+                fcurve = niftools_alpha.outputs[0].driver_add("default_value", 0)
+                driver = fcurve.driver
+                driver.type = 'SCRIPTED'
+                driver.expression = 'var'
+                var = driver.variables.new()
+                var.name = 'var'
+                var.type = 'SINGLE_PROP'
+                target = var.targets[0]
+                target.id_type = 'MATERIAL'
+                target.id = self.b_mat
+                target.data_path = 'niftools.emissive_alpha[0]'
+            except (TypeError, ValueError, RuntimeError):
+                pass
+
+            alpha_source = None
             #
             if self.diffuse_texture and has_vcol:
                 mixAAA = self.tree.nodes.new('ShaderNodeMixRGB')
@@ -220,11 +248,20 @@ class NodesWrapper:
                 mixAAA.blend_type = "MULTIPLY"
                 self.tree.links.new(self.diffuse_texture.outputs[1], mixAAA.inputs[1])
                 self.tree.links.new(self.vcol.outputs[1], mixAAA.inputs[2])
-                self.tree.links.new(mixAAA.outputs[0], alpha_mixer.inputs[0])
+                alpha_source = mixAAA.outputs[0]
             elif self.diffuse_texture:
-                self.tree.links.new(self.diffuse_texture.outputs[1], alpha_mixer.inputs[0])
+                alpha_source = self.diffuse_texture.outputs[1]
             elif has_vcol:
-                self.tree.links.new(self.vcol.outputs[1], alpha_mixer.inputs[0])
+                alpha_source = self.vcol.outputs[1]
+
+            if alpha_source:
+                alpha_mult = self.tree.nodes.new('ShaderNodeMath')
+                alpha_mult.operation = "MULTIPLY"
+                self.tree.links.new(alpha_source, alpha_mult.inputs[0])
+                self.tree.links.new(niftools_alpha_sep.outputs[0], alpha_mult.inputs[1])
+                self.tree.links.new(alpha_mult.outputs[0], alpha_mixer.inputs[0])
+            else:
+                self.tree.links.new(niftools_alpha_sep.outputs[0], alpha_mixer.inputs[0])
 
             self.tree.links.new(transp.outputs[0], alpha_mixer.inputs[1])
             self.tree.links.new(self.diffuse_shader.outputs[0], alpha_mixer.inputs[2])

@@ -82,7 +82,13 @@ class MaterialAnimation(Animation):
         """Export the material alpha or color controller data."""
 
         # get fcurves
-        fcurves = [fcu for fcu in b_material.animation_data.action.fcurves if b_dtype in fcu.data_path]
+        if b_dtype == "alpha":
+            fcurves = [
+                fcu for fcu in b_material.animation_data.action.fcurves
+                if fcu.data_path == "niftools.emissive_alpha" and fcu.array_index == 0
+            ]
+        else:
+            fcurves = [fcu for fcu in b_material.animation_data.action.fcurves if b_dtype in fcu.data_path]
         if not fcurves:
             return
 

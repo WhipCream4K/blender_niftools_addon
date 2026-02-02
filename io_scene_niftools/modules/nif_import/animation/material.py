@@ -81,6 +81,8 @@ class MaterialAnimation(Animation):
         # key needs to be RGB due to current representation in blender
         keys = [(v, v, v) for v in keys]
         self.add_keys(b_mat_action, "niftools.emissive_alpha", range(3), n_ctrl.flags, times, keys, interp)
+        if hasattr(b_material, "blend_method") and b_material.blend_method == "OPAQUE":
+            b_material.blend_method = "BLEND"
 
     def import_material_color_controller(self, b_material, n_material, b_channel, n_target_color):
         # find material color controller with matching target color

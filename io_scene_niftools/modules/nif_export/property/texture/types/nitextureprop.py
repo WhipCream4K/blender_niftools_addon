@@ -184,6 +184,14 @@ class NiTextureProp(TextureSlotManager):
                 # set uv index and source texture to the texdesc
                 texdesc.uv_set = uv_index
                 texdesc.source = TextureWriter.export_source_texture(b_texture_node)
+                if b_texture_node.inputs:
+                    mapping_node = self.get_input_node_of_type(b_texture_node.inputs[0], bpy.types.ShaderNodeMapping)
+                else:
+                    mapping_node = None
+                if mapping_node:
+                    self.texture_anim.export_texture_transform_controller(
+                        self.b_mat, mapping_node, texprop, texdesc, slot_name
+                    )
 
         # TODO [animation] FIXME Heirarchy
         # self.texture_anim.export_flip_controller(fliptxt, self.base_mtex.texture, texprop, 0)

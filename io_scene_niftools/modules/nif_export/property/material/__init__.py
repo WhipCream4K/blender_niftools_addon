@@ -101,7 +101,17 @@ class MaterialProp:
 
         # map roughness [0,1] to glossiness (MW -> 0.0 - 128.0)
         n_mat_prop.glossiness = min(1/b_mat.roughness - 1, 128) if b_mat.roughness != 0 else 128
-        n_mat_prop.alpha = b_mat.niftools.emissive_alpha.v
+        alpha_value = None
+        if b_mat.animation_data and b_mat.animation_data.action:
+            for fcu in b_mat.animation_data.action.fcurves:
+                if fcu.data_path == "niftools.emissive_alpha" and fcu.array_index == 0:
+                    if fcu.keyframe_points:
+                        start_frame = fcu.range()[0]
+                        alpha_value = fcu.evaluate(start_frame)
+                    break
+        if alpha_value is None:
+            alpha_value = b_mat.niftools.emissive_alpha.v
+        n_mat_prop.alpha = alpha_value
         # todo [material] this float is used by FO3's material properties
         # n_mat_prop.emit_multi = emitmulti
 
